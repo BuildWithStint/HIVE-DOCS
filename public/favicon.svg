@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="comb" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD24A"/>
+      <stop offset="1" stop-color="#F2A516"/>
+    </linearGradient>
+  </defs>
+  <!-- honeycomb: three hexagon cells -->
+  <g fill="url(#comb)" stroke="#B9760A" stroke-width="1.5" stroke-linejoin="round">
+    <path d="M20 6 28.66 11 28.66 21 20 26 11.34 21 11.34 11z"/>
+    <path d="M44 6 52.66 11 52.66 21 44 26 35.34 21 35.34 11z"/>
+    <path d="M32 27 40.66 32 40.66 42 32 47 23.34 42 23.34 32z"/>
+  </g>
+  <!-- bee -->
+  <g transform="translate(32 38)">
+    <!-- wings -->
+    <g fill="#FFFFFF" fill-opacity="0.9">
+      <ellipse cx="-3" cy="-8" rx="5" ry="3.2" transform="rotate(-28 -3 -8)"/>
+      <ellipse cx="3" cy="-8" rx="5" ry="3.2" transform="rotate(28 3 -8)"/>
+    </g>
+    <!-- body -->
+    <ellipse cx="0" cy="0" rx="9" ry="6.5" fill="#2B2118"/>
+    <g stroke="#FFC83D" stroke-width="2.4" stroke-linecap="round">
+      <line x1="-4.5" y1="-4.2" x2="-4.5" y2="4.2"/>
+      <line x1="0" y1="-5.6" x2="0" y2="5.6"/>
+      <line x1="4.5" y1="-4.2" x2="4.5" y2="4.2"/>
+    </g>
+    <!-- head -->
+    <circle cx="-9.5" cy="0" r="3.2" fill="#2B2118"/>
+  </g>
+</svg>
