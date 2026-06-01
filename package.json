@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "packageManager": "pnpm@10.30.0",
   "description": "HIVE documentation portal — a local-only Vite + React app that renders about/, rules/, docs/ and MINT docs with a premium UI (search, sidebar, on-this-page, dark/light). Replaces the old express dev portal.",
   "scripts": {
     "dev": "vite",
