@@ -155,7 +155,7 @@ flowchart LR
           chart={`
 flowchart LR
     A["@hive/dal<br/><small>generic adapters + query AST</small>"] -->|MINT replace| B["src/lib/dal/util.ts + index.ts<br/><small>helpers + inline mongo / sql queries, one engine</small>"]
-    S["schema/*.table.ts"] -->|MINT ship| D["db/schema.sql or db/schema.mongo.json"]
+    S["database/tables/*.table.ts"] -->|MINT ship| D["db/schema.sql or db/schema.mongo.json"]
 `}
         />
         <p>

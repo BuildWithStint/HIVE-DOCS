@@ -32,17 +32,17 @@ export default function Database() {
         lead={
           <>
             Every HIVE service shares <strong>one database</strong>. You declare your
-            tables <strong>once</strong> in the <C>schema/</C> folder, and one command —{' '}
-            <C>mint run db</C> — tells you exactly what changed and gives you the SQL (or
-            applies it to Mongo) to make the database match. No ORM migrations folder to
-            hand-edit, no guessing.
+            tables <strong>once</strong> in the <C>database/tables/</C> folder, and one
+            command — <C>mint run db</C> — tells you exactly what changed and gives you the
+            SQL (or applies it to Mongo) to make the database match. No ORM migrations folder
+            to hand-edit, no guessing.
           </>
         }
       />
 
       <Callout kind="key" title="The whole idea in one sentence">
-        Describe the tables you want in <C>schema/</C>; run <C>mint run db</C>; it diffs
-        what you declared against what's already applied and hands you the change to run.
+        Describe the tables you want in <C>database/tables/</C>; run <C>mint run db</C>; it
+        diffs what you declared against what's already applied and hands you the change to run.
       </Callout>
 
       {/* ------------------------------------------------------------------ */}
@@ -80,19 +80,20 @@ flowchart TD
       </Section>
 
       {/* ------------------------------------------------------------------ */}
-      <Section title="The schema folder">
+      <Section title="The database folder">
         <p>
-          Everything lives in <C>HIVE/schema/</C>. It is plain data — no database driver,
+          Everything lives in <C>HIVE/database/</C>. It is plain data — no database driver,
           no logic — so it is easy to read, diff in a PR, and copy into a minted service.
         </p>
         <Table
-          head={['File', 'What it is']}
+          head={['Path', 'What it is']}
           rows={[
-            [<C>db.properties</C>, <>The registry: which services exist, the database name, and the default engine.</>],
+            [<C>db.properties</C>, <>The single registry you edit: the services map, the database name, and the default engine.</>],
+            [<C>services.ts</C>, <><strong>Generated</strong> from db.properties — import it so a table's <C>scope</C> autocompletes and a typo is a compile error.</>],
             [<C>define.ts</C>, <>The tiny typed helper <C>defineTable(...)</C> — gives you autocomplete and validation.</>],
-            [<C>&lt;name&gt;.table.ts</C>, <>One file per table/collection. Its default export is a <C>defineTable(...)</C> call.</>],
-            [<C>applied.&lt;engine&gt;.json</C>, <>A lockfile MINT writes: the last state it applied (so it can diff next time).</>],
-            [<C>migrations/</C>, <>Generated SQL migration files (Postgres) you run against your database.</>],
+            [<C>tables/&lt;name&gt;.table.ts</C>, <>One file per table/collection. Its default export is a <C>defineTable(...)</C> call.</>],
+            [<C>psql-migrations/</C>, <>Generated <C>.sql</C> files — what to apply to Postgres. Each embeds the resulting state; they ARE the record (no lockfile).</>],
+            [<C>schema.mongo.json</C>, <><strong>Generated</strong> collection/index plan for Mongo. Each service ensures it at boot — the Mongo equivalent of a <C>.sql</C> file.</>],
           ]}
         />
 
@@ -102,12 +103,12 @@ flowchart TD
         </p>
         <CodeBlock
           lang="ts"
-          title="schema/products.table.ts"
-          code={`import { defineTable } from './define.ts';
+          title="database/tables/products.table.ts"
+          code={`import { defineTable } from '../define.ts';
 
 export default defineTable({
   name: 'products',
-  prefix: ['catalog'],            // owned by the catalog service
+  scope: ['catalog'],             // owned by the catalog service
   columns: {
     id:     { type: 'id' },                                  // primary key
     sku:    { type: 'string', required: true, unique: true },
@@ -121,11 +122,21 @@ export default defineTable({
         />
 
         <Sub title="The registry: db.properties" />
+        <p>
+          <C>db.properties</C> is the <strong>only</strong> file you edit to register a
+          service. <C>services</C> is a map: the keys are the service names (valid{' '}
+          <C>scope</C> values) and each may carry config under <C>service.&lt;key&gt;.*</C>.
+          The typed <C>services.ts</C> is regenerated from it.
+        </p>
         <CodeBlock
           lang="properties"
-          title="schema/db.properties"
-          code={`# Comma-separated list of services allowed to own tables.
+          title="database/db.properties"
+          code={`# Registered services (the keys; comma-separated).
 services=catalog
+
+# Per-service config, addressed as service.<key>.<field>.
+service.catalog.description=Product catalog service (the sample HIVE service).
+service.catalog.db=mongo
 
 # Logical database name (Mongo db / SQL schema). Same for every service.
 database=hive
@@ -134,21 +145,23 @@ database=hive
 engine=mongo`}
         />
         <Callout kind="warn" title="Register a new service before its tables">
-          A table's <C>prefix</C> may only name <C>common</C> or a service listed in{' '}
+          A table's <C>scope</C> may only name <C>common</C> or a service key in{' '}
           <C>services=</C>. Add your service there first (it's the first step of{' '}
           <DocLink to="about/create-a-service">creating a service</DocLink>).
         </Callout>
       </Section>
 
       {/* ------------------------------------------------------------------ */}
-      <Section title="Ownership: the prefix">
+      <Section title="Ownership: the scope">
         <p>
-          The <C>prefix</C> array is the one idea that makes everything else simple. It
+          The <C>scope</C> array is the one idea that makes everything else simple. It
           says <strong>who owns the table</strong> — and therefore which minted services
-          carry it.
+          carry it. Its type comes from <C>services.ts</C>, so the only values you can
+          write are <C>'common'</C> or a registered service — you get editor autocomplete
+          and a compile-time error on a typo instead of a runtime failure.
         </p>
         <Table
-          head={['prefix', 'Meaning', 'Shipped when you mint…']}
+          head={['scope', 'Meaning', 'Shipped when you mint…']}
           rows={[
             [<C>['common']</C>, 'Shared by EVERY service.', 'every service'],
             [<C>['catalog']</C>, 'Owned by just the catalog service.', 'catalog'],
@@ -157,7 +170,7 @@ engine=mongo`}
         />
         <Callout kind="note" title="Why this matters for MINT">
           When MINT extracts the <C>catalog</C> service it ships exactly the tables whose
-          prefix contains <C>common</C> or <C>catalog</C> — no more, no less. See{' '}
+          scope contains <C>common</C> or <C>catalog</C> — no more, no less. See{' '}
           <DocLink to="about/how-mint-works">how MINT works</DocLink>.
         </Callout>
       </Section>
@@ -215,15 +228,15 @@ MINT_REPO=$PWD node MINT/dist/cli/main.js run db [--db mongo|postgres] [--servic
         />
 
         <Mermaid
-          caption="The same flow for both engines: load → validate → diff. SQL is handed to you; Mongo is reconciled live."
+          caption="The same flow for both engines: load → validate → generate. SQL is handed to you; Mongo gets a plan the service ensures at boot."
           chart={`
 flowchart TD
-    A["read schema/*.table.ts<br/>+ db.properties"] --> B["validate ownership<br/><small>every prefix is registered</small>"]
+    A["read database/tables/*.table.ts<br/>+ db.properties"] --> B["validate ownership<br/><small>every scope is registered</small>"]
     B --> C{"engine?"}
-    C -->|postgres| D["diff vs applied.postgres.json"]
-    D --> E["write migrations/&lt;stamp&gt;.sql<br/>print: psql -f &lt;file&gt;"]
-    C -->|mongo| F["read live db<br/>(collections + indexes)"]
-    F --> G["create what's missing<br/>(idempotent)"]
+    C -->|postgres| D["diff vs newest migration's<br/>embedded -- mint:state"]
+    D --> E["write psql-migrations/&lt;stamp&gt;.sql<br/>print: psql -f &lt;file&gt;"]
+    C -->|mongo| F["generate schema.mongo.json<br/>(collections + indexes)"]
+    F --> G["service ensureSchema() at boot<br/>creates what's missing (idempotent)"]
 `}
         />
       </Section>
@@ -243,13 +256,13 @@ Schema: 2 table(s) (whole database) on postgres.
 + create table audit_events (5 columns)
 + create table products (7 columns)
 
-Wrote migration: schema/migrations/2026-…_init.sql
-Run it: psql "$POSTGRES_URL" -f schema/migrations/2026-…_init.sql`}
+Wrote migration: database/psql-migrations/2026-…_init.sql
+Run it: psql "$POSTGRES_URL" -f database/psql-migrations/2026-…_init.sql`}
         />
         <p>The generated SQL is plain and safe to read:</p>
         <CodeBlock
           lang="sql"
-          title="schema/migrations/…_init.sql"
+          title="database/psql-migrations/…_init.sql"
           code={`CREATE TABLE IF NOT EXISTS "products" (
   "id" TEXT PRIMARY KEY,
   "sku" TEXT NOT NULL UNIQUE,
@@ -267,14 +280,21 @@ CREATE INDEX IF NOT EXISTS "idx_products_orgId" ON "products" ("orgId");`}
           <strong>never drops</strong> a table or column — a removed table is reported as a
           comment so you decide.
         </Callout>
+        <Callout kind="note" title="No lockfile — the migrations ARE the record">
+          There is no <C>applied.postgres.json</C>. Each <C>.sql</C> file ends with a{' '}
+          <C>-- mint:state</C> comment holding the full resulting schema; the next run reads
+          the newest one to know what's already there. The folder of migrations is the
+          history — readable top to bottom.
+        </Callout>
       </Section>
 
       {/* ------------------------------------------------------------------ */}
-      <Section title="Mongo: it reconciles the live database">
+      <Section title="Mongo: a generated plan the service ensures at boot">
         <p>
-          Mongo is schemaless, so there is no DDL to hand you. Instead MINT connects, reads
-          what already exists, and creates only what's missing (collections + indexes). The
-          live database <em>is</em> the previous state:
+          Mongo is schemaless — a collection appears on first write, so the only thing worth
+          declaring is the collections and their indexes. MINT does <strong>not</strong>
+          connect to or mutate your database. Instead <C>run db --db mongo</C> writes a
+          generated <C>database/schema.mongo.json</C> plan from your tables:
         </p>
         <CodeBlock
           lang="bash"
@@ -282,23 +302,44 @@ CREATE INDEX IF NOT EXISTS "idx_products_orgId" ON "products" ("orgId");`}
 
 Schema: 2 table(s) (whole database) on mongo.
 
-+ create collection audit_events
-+ index audit_events.orgId
-+ unique index products.sku
-+ index products.orgId
+• collection audit_events
+    index audit_events.orgId
+• collection products
+    unique index products.sku
+    index products.orgId
 
-✓ Applied to Mongo db 'hive'.`}
+Wrote plan: database/schema.mongo.json
+Services ensure it at boot (idempotent, additive only).`}
         />
-        <p>Run it again and it is a no-op — it only ever adds what's missing:</p>
-        <CodeBlock lang="bash" code={`Up to date — Mongo db 'hive' already matches.`} />
+        <p>
+          The plan is the Mongo equivalent of a Postgres <C>.sql</C> file. The service
+          applies it itself: on startup it calls <C>ensureSchema()</C>, which idempotently
+          creates any missing collections and indexes. Run it twice and the second run is a
+          no-op — it only ever <strong>adds</strong> what's missing.
+        </p>
+        <CodeBlock
+          lang="ts"
+          title="the service does this at boot (apps/catalog/src/main.ts)"
+          code={`import { ensureSchema } from '@hive/dal';
+
+// after listen(): create any missing collections/indexes from
+// the generated schema.mongo.json. Safe to run on every boot.
+await ensureSchema('mongo');`}
+        />
+        <Callout kind="note" title="Additive only — same trust model as Postgres">
+          <C>ensureSchema</C> never drops or alters anything: it only creates what's missing.
+          A conflicting existing index (e.g. the plan wants <C>unique</C> but the live one
+          isn't) is reported as a <strong>warning</strong>, never changed. MINT itself never
+          touches a live database — both engines now produce a file artifact you can review.
+        </Callout>
       </Section>
 
       {/* ------------------------------------------------------------------ */}
       <Section title="The everyday workflow">
         <Steps>
           <Step title="Declare or change a table">
-            Add a <C>schema/&lt;name&gt;.table.ts</C> (or edit an existing one). Register a
-            new service in <C>db.properties</C> first.
+            Add a <C>database/tables/&lt;name&gt;.table.ts</C> (or edit an existing one).
+            Register a new service in <C>database/db.properties</C> first.
           </Step>
           <Step title="Preview the change">
             <CodeBlock lang="bash" code={`MINT_REPO=$PWD node MINT/dist/cli/main.js run db --check`} />
@@ -307,12 +348,12 @@ Schema: 2 table(s) (whole database) on mongo.
           <Step title="Apply it">
             <CodeBlock
               lang="bash"
-              code={`# mongo: applies live
+              code={`# mongo: regenerate the plan; the service ensures it at boot
 MINT_REPO=$PWD node MINT/dist/cli/main.js run db --db mongo
 
 # postgres: writes the SQL, then you run it
 MINT_REPO=$PWD node MINT/dist/cli/main.js run db --db postgres --name my-change
-psql "$POSTGRES_URL" -f schema/migrations/…_my-change.sql`}
+psql "$POSTGRES_URL" -f database/psql-migrations/…_my-change.sql`}
             />
           </Step>
         </Steps>
@@ -322,8 +363,8 @@ psql "$POSTGRES_URL" -f schema/migrations/…_my-change.sql`}
       <Section title="FAQ">
         <Cards cols={1}>
           <Card icon="❓" title="Do I write SQL or Mongo queries here?">
-            No. You only declare neutral tables in <C>schema/</C>. MINT translates to the
-            engine. Your service code uses the repository (<DocLink to="about/dal">dal</DocLink>),
+            No. You only declare neutral tables in <C>database/tables/</C>. MINT translates
+            to the engine. Your service code uses the repository (<DocLink to="about/dal">dal</DocLink>),
             never raw queries.
           </Card>
           <Card icon="❓" title="Will it ever delete my data?">
@@ -339,9 +380,11 @@ psql "$POSTGRES_URL" -f schema/migrations/…_my-change.sql`}
             MINT ships them inside the extract: <C>db/schema.sql</C> (Postgres) or{' '}
             <C>db/schema.mongo.json</C> (Mongo) for exactly the tables that service owns.
           </Card>
-          <Card icon="❓" title="Why is there a lockfile (applied.*.json)?">
-            So the next run can diff. It records the last state MINT applied, which is how it
-            knows to emit an <C>ALTER</C> instead of re-creating everything.
+          <Card icon="❓" title="Where's the record of what's applied?">
+            In the generated artifacts — there is no <C>applied.*.json</C> lockfile. Each
+            Postgres <C>.sql</C> ends with a <C>-- mint:state</C> snapshot the next run diffs
+            against; for Mongo the <C>schema.mongo.json</C> plan is the declared state, and
+            the service reconciles it at boot. MINT never mutates a live database.
           </Card>
         </Cards>
       </Section>

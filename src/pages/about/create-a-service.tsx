@@ -47,9 +47,9 @@ export default function CreateAService() {
         <p>
           The repo ships a generator that does <strong>every</strong> registration step
           for you — copy the scaffold, rename the package, register in{' '}
-          <C>db.properties</C>, add the tsconfig reference, install, sync. The{' '}
-          <strong>Step by step</strong> section below is the manual version of the same
-          flow, useful when you want to understand what changed.
+          <C>db.properties</C> and <C>services.ts</C>, add the tsconfig reference, install,
+          sync. The <strong>Step by step</strong> section below is the manual version of
+          the same flow, useful when you want to understand what changed.
         </p>
         <CodeBlock
           lang="bash"
@@ -67,7 +67,7 @@ node scripts/create-service.mjs orders --no-install`}
           Source lives at <C>scaffold/sample-service/</C> (the template) and{' '}
           <C>scripts/create-service.mjs</C> (the generator). The generator refuses to
           overwrite an existing <C>apps/&lt;name&gt;</C> or{' '}
-          <C>schema/&lt;name&gt;.table.ts</C>.
+          <C>database/tables/&lt;name&gt;.table.ts</C>.
         </Callout>
       </Section>
 
@@ -98,30 +98,45 @@ flowchart LR
       <Section title="Step by step">
         <Steps>
           <Step title="Register the service for the database">
-            Open <C>schema/db.properties</C> and add your service to the{' '}
-            <C>services=</C> list. This must happen <strong>before</strong> any of its
-            tables, because a table's <C>prefix</C> may only name a registered service.
+            Open <C>database/db.properties</C> — the single registry — and add your service
+            to the <C>services=</C> list (optionally with a{' '}
+            <C>service.&lt;name&gt;.*</C> config block). The typed{' '}
+            <C>database/services.ts</C> is regenerated from it. This must happen{' '}
+            <strong>before</strong> any of its tables, because a table's <C>scope</C> may
+            only name a registered service.
             <CodeBlock
               lang="properties"
-              title="schema/db.properties"
+              title="database/db.properties"
               code={`services=catalog,orders   # ← added 'orders'
+service.orders.description=Orders service.
+service.orders.db=mongo
+
 database=hive
 engine=mongo`}
+            />
+            <CodeBlock
+              lang="ts"
+              title="database/services.ts (generated)"
+              code={`export const SERVICES = {
+  catalog: { description: '…', db: 'mongo' },
+  orders:  { description: 'Orders service.', db: 'mongo' },   // ← added
+} as const satisfies Record<string, ServiceConfig>;`}
             />
           </Step>
 
           <Step title="Declare its tables">
-            Add a <C>schema/&lt;name&gt;.table.ts</C> for each table the service owns. Use{' '}
-            <C>prefix: ['&lt;service&gt;']</C> (or include <C>'common'</C> tables that
-            every service shares).
+            Add a <C>database/tables/&lt;name&gt;.table.ts</C> for each table the service
+            owns. Use <C>scope: ['&lt;service&gt;']</C> (or include <C>'common'</C> tables
+            that every service shares). <C>scope</C> autocompletes from <C>services.ts</C>,
+            so a typo is a compile error.
             <CodeBlock
               lang="ts"
-              title="schema/orders.table.ts"
-              code={`import { defineTable } from './define.ts';
+              title="database/tables/orders.table.ts"
+              code={`import { defineTable } from '../define.ts';
 
 export default defineTable({
   name: 'orders',
-  prefix: ['orders'],
+  scope: ['orders'],
   columns: {
     id:     { type: 'id' },
     ref:    { type: 'string', required: true, unique: true },
@@ -139,7 +154,8 @@ export default defineTable({
               code={`# preview just this service's tables
 MINT_REPO=$PWD node MINT/dist/cli/main.js run db --service orders --check
 
-# apply (mongo applies live; postgres writes SQL you then run)
+# mongo: writes schema.mongo.json (the service ensures it at boot)
+# postgres: writes SQL you then run with psql
 MINT_REPO=$PWD node MINT/dist/cli/main.js run db --service orders`}
             />
           </Step>
