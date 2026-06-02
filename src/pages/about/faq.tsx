@@ -64,7 +64,7 @@ export default function Faq() {
         </p>
         <ul>
           <li>
-            Mongo: the <DocLink to="about/catalog-service">catalog service</DocLink>{' '}
+            Mongo: the <DocLink to="about/demo-service">demo service</DocLink>{' '}
             exercises insert / fetch (all filter ops) / fetchOne / count / update /
             delete against a real MongoDB via <C>POST /demo</C>.
           </li>
@@ -93,7 +93,7 @@ export default function Faq() {
       <Section title="How do I create a new microservice?">
         <p>
           Copy the shape of{' '}
-          <DocLink to="about/catalog-service">apps/catalog</DocLink>: an{' '}
+          <DocLink to="about/demo-service">apps/demo</DocLink>: an{' '}
           <C>app.ts</C> pipeline (<C>express.json()</C> → core pipeline → routes →{' '}
           <C>errorHandler()</C>), a <C>main.ts</C> that sets <C>HIVE_SERVICE_DIR</C> and
           listens, and a single <C>make-repository.ts</C> that picks the db type and
@@ -110,7 +110,7 @@ export default function Faq() {
           tenant provider (<C>currentOrgId</C>) reads it and the adapter scopes{' '}
           <strong>every</strong> query by it; it fails closed if no tenant is in scope.
           Routes never read <C>orgId</C> from the body or headers. See{' '}
-          <DocLink to="about/catalog-service">the catalog service</DocLink> and{' '}
+          <DocLink to="about/demo-service">the demo service</DocLink> and{' '}
           <DocLink to="about/dal">@hive/dal</DocLink>.
         </p>
       </Section>

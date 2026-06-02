@@ -93,7 +93,7 @@ flowchart LR
           chart={`
 flowchart LR
     subgraph SRC["Your platform (READ-ONLY — untouched)"]
-      A["apps/catalog"]
+      A["apps/demo"]
       B["@hive/dal / @hive/connection"]
       C0["middleware (corePipeline)"]
     end
@@ -298,26 +298,26 @@ flowchart TD
         <CodeBlock
           lang="bash"
           code={`MINT_REPO=$PWD node MINT/dist/cli/main.js extract \\
-  --microservice catalog \\
+  --microservice demo \\
   --db mongo \\
   --mode silo \\
-  --name catalog-mongo \\
+  --name demo-mongo \\
   --token local-dev`}
         />
         <p>
-          This reads the <C>catalog</C> service and writes a single-tenant copy into{' '}
-          <C>output/catalog-mongo</C> — with inline Mongo queries and tenancy stripped. Your
-          real <C>apps/catalog</C> is untouched.
+          This reads the <C>demo</C> service and writes a single-tenant copy into{' '}
+          <C>output/demo-mongo</C> — with inline Mongo queries and tenancy stripped. Your
+          real <C>apps/demo</C> is untouched.
         </p>
 
         <Sub title="Example 2 — a shared (pooled) Postgres copy" />
         <CodeBlock
           lang="bash"
           code={`MINT_REPO=$PWD node MINT/dist/cli/main.js extract \\
-  --microservice catalog \\
+  --microservice demo \\
   --db postgres \\
   --mode pooled \\
-  --name catalog-pg \\
+  --name demo-pg \\
   --token local-dev`}
         />
         <p>
@@ -334,10 +334,10 @@ flowchart TD
           lang="text"
           code={`Resolved extraction request:
 {
-  "serviceName": "catalog",
+  "serviceName": "demo",
   "db": "mongo",
   "mode": "silo",
-  "outputName": "catalog-mongo",
+  "outputName": "demo-mongo",
   "capabilities": []
 }
 

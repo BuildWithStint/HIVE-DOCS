@@ -188,7 +188,7 @@ flowchart LR
 
       <Section title="5. Run the sample service">
         <p>
-          The <strong>catalog API</strong> shows every layer working together against a
+          The <strong>demo API</strong> shows every layer working together against a
           real MongoDB. Here is the whole journey, then the commands:
         </p>
         <Mermaid
@@ -197,10 +197,10 @@ flowchart LR
 sequenceDiagram
     participant You
     participant Node as node main.ts
-    participant API as catalog API
+    participant API as demo API
     participant DB as MongoDB
-    You->>Node: DB=mongo node apps/catalog/src/main.ts
-    Node->>API: start, listen on :4020
+    You->>Node: DB=mongo node apps/demo/src/main.ts
+    Node->>API: start, listen on :4030
     You->>API: curl POST /demo (x-org-id)
     API->>DB: scoped query (only your org)
     DB-->>API: rows
@@ -211,23 +211,23 @@ sequenceDiagram
           <Step title="Start it">
             <CodeBlock
               lang="bash"
-              code={`DB=mongo node apps/catalog/src/main.ts
-# → listening on http://localhost:4020`}
+              code={`DB=mongo node apps/demo/src/main.ts
+# → listening on http://localhost:4030`}
             />
           </Step>
           <Step title="Health check">
-            <CodeBlock lang="bash" code={`curl -s http://localhost:4020/health`} />
+            <CodeBlock lang="bash" code={`curl -s http://localhost:4030/health`} />
           </Step>
           <Step title="Call it (org-scoped)">
             <CodeBlock
               lang="bash"
-              code={`curl -s -X POST http://localhost:4020/demo -H 'x-org-id: org-A'`}
+              code={`curl -s -X POST http://localhost:4030/demo -H 'x-org-id: org-A'`}
             />
           </Step>
         </Steps>
         <p>
           Full walkthrough:{' '}
-          <DocLink to="about/catalog-service">the catalog service</DocLink>.
+          <DocLink to="about/demo-service">the demo service</DocLink>.
         </p>
       </Section>
 

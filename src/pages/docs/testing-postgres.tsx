@@ -103,16 +103,16 @@ docker rm -f hive-pg`}
         </p>
         <CodeBlock
           lang="bash"
-          code={`DB=postgres node apps/catalog/src/main.ts
-curl -s -X POST http://localhost:4020/demo -H 'x-org-id: org-A'`}
+          code={`DB=postgres node apps/demo/src/main.ts
+curl -s -X POST http://localhost:4030/demo -H 'x-org-id: org-A'`}
         />
         <Sub title="As a standalone MINT extract" />
         <p>Extract a Postgres copy that vendors the postgres adapter + connection:</p>
         <CodeBlock
           lang="bash"
           code={`MINT_REPO=$PWD node MINT/dist/cli/main.js extract \\
-  --microservice catalog --db postgres --mode silo \\
-  --name catalog-pg --token local-dev`}
+  --microservice demo --db postgres --mode silo \\
+  --name demo-pg --token local-dev`}
         />
         <Callout kind="note">
           Keep <C>POSTGRES_URL</C> in <C>env.local</C> only (never commit it), and rotate

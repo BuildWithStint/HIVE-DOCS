@@ -14,18 +14,18 @@ import { Mermaid } from '../../components/Mermaid';
 
 export const meta = {
   group: 'about',
-  file: 'catalog-service',
-  title: 'catalog service',
+  file: 'demo-service',
+  title: 'demo service',
   order: 3,
 };
 
-export default function CatalogService() {
+export default function DemoService() {
   return (
     <Page>
       <PageHeader
-        kicker="Concepts & Layers · apps/catalog"
-        title="catalog — a thin service, everything working together"
-        lead="A small, runnable multi-tenant service under apps/catalog. It owns only what is service-specific: its queries, its db type, and its tenancy decision. Everything generic comes from @hive/connection and @hive/dal."
+        kicker="Concepts & Layers · apps/demo"
+        title="demo — a thin service, everything working together"
+        lead="A small, runnable multi-tenant service under apps/demo. It owns only what is service-specific: its queries, its db type, and its tenancy decision. Everything generic comes from @hive/connection and @hive/dal."
       />
 
       <Section title="What lives in the service (and what doesn't)">
@@ -38,9 +38,9 @@ export default function CatalogService() {
           ]}
         />
         <FileTree
-          title="apps/catalog/src"
+          title="apps/demo/src"
           nodes={[
-            { name: 'main.ts', note: 'boot: set HIVE_SERVICE_DIR, port, shutdown' },
+            { name: 'main.ts', note: 'boot: set HIVE_SERVICE_DIR, port, ensureSchema, shutdown' },
             { name: 'app.ts', note: 'json → timer → /health → core pipeline → routes → errors' },
             {
               name: 'lib',

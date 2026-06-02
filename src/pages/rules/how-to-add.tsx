@@ -97,7 +97,7 @@ export default function HowToAdd() {
 
       <Section title="Add a new service (app)">
         <Mermaid
-          caption="Wire a new service exactly like apps/catalog."
+          caption="Wire a new service exactly like apps/demo."
           chart={`
 flowchart LR
     DAL["@hive/dal"] --> MR["make-repository"]
@@ -109,7 +109,7 @@ flowchart LR
           <li>Create a package under <C>apps/&lt;name&gt;</C>.</li>
           <li>Add <C>@hive/connection</C> + <C>@hive/dal</C> as <C>workspace:*</C> deps.</li>
           <li>
-            Wire it up like <DocLink to="about/catalog-service">apps/catalog</DocLink>: a
+            Wire it up like <DocLink to="about/demo-service">apps/demo</DocLink>: a
             single <C>make-repository.ts</C> (db type + tenancy), an <C>app.ts</C>{' '}
             (<C>express.json()</C> → <C>corePipeline</C> → routes → <C>errorHandler()</C>),
             and a <C>main.ts</C> that sets <C>HIVE_SERVICE_DIR</C> and listens.
@@ -216,7 +216,7 @@ flowchart LR
         <Card icon="✍️" title="Coding standards" to="rules/coding-standards">
           The rules for the code itself.
         </Card>
-        <Card icon="🧩" title="Sample service" to="about/catalog-service">
+        <Card icon="🧩" title="Sample service" to="about/demo-service">
           A working reference to copy.
         </Card>
       </NextSteps>

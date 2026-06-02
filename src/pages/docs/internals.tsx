@@ -195,7 +195,7 @@ flowchart TD
 
       <Section title="5. the service — tenancy + the request pipeline">
         <p>
-          A service (e.g. <DocLink to="about/catalog-service">apps/catalog</DocLink>) owns
+          A service (e.g. <DocLink to="about/demo-service">apps/demo</DocLink>) owns
           only what's service-specific: its routes, its db type, and its tenancy.
         </p>
         <Mermaid

@@ -131,12 +131,12 @@ flowchart TD
       <Section title="Running the sample service">
         <CodeBlock
           lang="bash"
-          code={`DB=mongo node apps/catalog/src/main.ts   # needs MONGO_URL in env.local`}
+          code={`DB=mongo node apps/demo/src/main.ts   # needs MONGO_URL in env.local`}
         />
         <p>
           The service sets <C>HIVE_SERVICE_DIR</C>, connects to Mongo, and listens on{' '}
-          <C>PORT</C> (default 4020). See{' '}
-          <DocLink to="about/catalog-service">the catalog service</DocLink>.
+          <C>PORT</C> (default 4030). See{' '}
+          <DocLink to="about/demo-service">the demo service</DocLink>.
         </p>
       </Section>
 
@@ -149,8 +149,8 @@ flowchart TD
         <CodeBlock
           lang="bash"
           code={`MINT_REPO=$PWD node MINT/dist/cli/main.js extract \\
-  --microservice catalog --db mongo --mode silo \\
-  --name catalog-mongo --token local-dev`}
+  --microservice demo --db mongo --mode silo \\
+  --name demo-mongo --token local-dev`}
         />
         <p>
           Use <C>--db postgres</C> for the Postgres adapter. Details:{' '}
@@ -182,7 +182,7 @@ flowchart TD
             ['Build one package', <C>npx nx build @hive/&lt;name&gt;</C>],
             ['Test one package', <C>npx nx test @hive/&lt;name&gt;</C>],
             ['Verify the whole repo', <C>npx nx run-many -t typecheck test --all</C>],
-            ['Run the sample API', <C>DB=mongo node apps/catalog/src/main.ts</C>],
+            ['Run the sample API', <C>DB=mongo node apps/demo/src/main.ts</C>],
             ['Extract a standalone copy', <C>node MINT/dist/cli/main.js extract …</C>],
             ['Scaffold a package', <C>npx nx g @nx/js:library …</C>],
           ]}

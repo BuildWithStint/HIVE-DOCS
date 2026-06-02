@@ -95,7 +95,7 @@ flowchart TD
           rows={[
             ['Env + DB clients', <C>@hive/connection</C>, <DocLink to="about/connection">connection</DocLink>],
             ['Query + adapters', <C>@hive/dal</C>, <DocLink to="about/dal">dal</DocLink>],
-            ['Sample service', <C>apps/catalog</C>, <DocLink to="about/catalog-service">catalog service</DocLink>],
+            ['Sample service', <C>apps/demo</C>, <DocLink to="about/demo-service">demo service</DocLink>],
             ['Docs portal', <C>@hive/portal</C>, <DocLink to="about/devportal">devportal</DocLink>],
             ['Extraction tool', <C>MINT</C>, <DocLink to="about/mint">mint</DocLink>],
           ]}

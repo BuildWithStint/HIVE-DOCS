@@ -201,7 +201,7 @@ flowchart TD
 `}
         />
         <Callout kind="note" title="Proven by real tests">
-          The catalog service has an "org-B cannot see org-A" behaviour against live
+          The demo service has an "org-B cannot see org-A" behaviour against live
           MongoDB, and the Postgres path uses the same neutral query through its own
           adapter. See <DocLink to="about/dal">@hive/dal</DocLink>.
         </Callout>

@@ -58,13 +58,13 @@ export default function Database() {
           chart={`
 flowchart TD
     subgraph SVC["Services"]
-      C1["catalog"]
+      C1["demo"]
       C2["orders"]
       C3["billing"]
     end
     subgraph DB["🗄️ One shared database"]
-      T1["products<br/><small>owner: catalog</small>"]
-      T2["order_items<br/><small>owner: catalog, orders</small>"]
+      T1["items<br/><small>owner: demo</small>"]
+      T2["order_items<br/><small>owner: demo, orders</small>"]
       T3["invoices<br/><small>owner: billing</small>"]
       T4["audit_events<br/><small>owner: common = everyone</small>"]
     end
@@ -99,24 +99,23 @@ flowchart TD
 
         <Sub title="A table file" />
         <p>
-          Here is the catalog's <C>products</C> table — it mirrors the REST payload exactly:
+          Here is the demo service's <C>items</C> table:
         </p>
         <CodeBlock
           lang="ts"
-          title="database/tables/products.table.ts"
+          title="database/tables/demo.table.ts"
           code={`import { defineTable } from '../define.ts';
 
 export default defineTable({
-  name: 'products',
-  scope: ['catalog'],             // owned by the catalog service
+  name: 'items',
+  scope: ['demo'],                // owned by the demo service
   columns: {
-    id:     { type: 'id' },                                  // primary key
-    sku:    { type: 'string', required: true, unique: true },
-    name:   { type: 'string', required: true },
-    price:  { type: 'number', required: true },
-    tags:   { type: 'string[]' },
-    active: { type: 'boolean', default: true },
-    orgId:  { type: 'string', index: true },                 // tenancy column
+    id:    { type: 'id' },                                   // primary key
+    key:   { type: 'string', required: true, unique: true },
+    name:  { type: 'string', required: true, index: true },
+    qty:   { type: 'number', required: true, default: 0 },
+    tags:  { type: 'string[]' },
+    orgId: { type: 'string', index: true },                  // tenancy column
   },
 });`}
         />
@@ -132,11 +131,11 @@ export default defineTable({
           lang="properties"
           title="database/db.properties"
           code={`# Registered services (the keys; comma-separated).
-services=catalog
+services=demo
 
 # Per-service config, addressed as service.<key>.<field>.
-service.catalog.description=Product catalog service (the sample HIVE service).
-service.catalog.db=mongo
+service.demo.description=HIVE demo service.
+service.demo.db=mongo
 
 # Logical database name (Mongo db / SQL schema). Same for every service.
 database=hive
@@ -164,13 +163,13 @@ engine=mongo`}
           head={['scope', 'Meaning', 'Shipped when you mint…']}
           rows={[
             [<C>['common']</C>, 'Shared by EVERY service.', 'every service'],
-            [<C>['catalog']</C>, 'Owned by just the catalog service.', 'catalog'],
-            [<C>['catalog', 'orders']</C>, 'Shared by exactly those two services.', 'catalog or orders'],
+            [<C>['demo']</C>, 'Owned by just the demo service.', 'demo'],
+            [<C>['demo', 'orders']</C>, 'Shared by exactly those two services.', 'demo or orders'],
           ]}
         />
         <Callout kind="note" title="Why this matters for MINT">
-          When MINT extracts the <C>catalog</C> service it ships exactly the tables whose
-          scope contains <C>common</C> or <C>catalog</C> — no more, no less. See{' '}
+          When MINT extracts the <C>demo</C> service it ships exactly the tables whose
+          scope contains <C>common</C> or <C>demo</C> — no more, no less. See{' '}
           <DocLink to="about/how-mint-works">how MINT works</DocLink>.
         </Callout>
       </Section>
@@ -319,7 +318,7 @@ Services ensure it at boot (idempotent, additive only).`}
         </p>
         <CodeBlock
           lang="ts"
-          title="the service does this at boot (apps/catalog/src/main.ts)"
+          title="the service does this at boot (apps/demo/src/main.ts)"
           code={`import { ensureSchema } from '@hive/dal';
 
 // after listen(): create any missing collections/indexes from

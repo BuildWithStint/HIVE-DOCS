@@ -37,8 +37,8 @@ export default function CreateAService() {
       />
 
       <Callout kind="key" title="Run an existing service in one line">
-        <CodeBlock lang="bash" code={`cd apps/catalog && npm run dev`} />
-        That's it — <C>node --watch src/main.ts</C> on <C>http://localhost:4020</C>,
+        <CodeBlock lang="bash" code={`cd apps/demo && npm run dev`} />
+        That's it — <C>node --watch src/main.ts</C> on <C>http://localhost:4030</C>,
         reloading on save. (Set <C>DB=mongo</C> or <C>DB=postgres</C> to choose the engine.)
       </Callout>
 
@@ -46,10 +46,13 @@ export default function CreateAService() {
       <Section title="Scaffold a new service in one command">
         <p>
           The repo ships a generator that does <strong>every</strong> registration step
-          for you — copy the scaffold, rename the package, register in{' '}
-          <C>db.properties</C> and <C>services.ts</C>, add the tsconfig reference, install,
-          sync. The <strong>Step by step</strong> section below is the manual version of
-          the same flow, useful when you want to understand what changed.
+          for you — copy the scaffold, rename the package, <strong>assign a unique{' '}
+          <C>PORT</C></strong> (from <C>hive.scaffold.portBase + hive.scaffold.portIndex</C>{' '}
+          in <C>hive.properties</C>, then bumps the index so the next service gets the next
+          free port), register in <C>db.properties</C> and <C>services.ts</C>, add the
+          tsconfig reference, install, sync. It does <strong>not</strong> create a table —
+          registration is enough. The <strong>Step by step</strong> section below is the
+          manual version of the same flow, useful when you want to understand what changed.
         </p>
         <CodeBlock
           lang="bash"
@@ -66,15 +69,14 @@ node scripts/create-service.mjs orders --no-install`}
         <Callout kind="tip">
           Source lives at <C>scaffold/sample-service/</C> (the template) and{' '}
           <C>scripts/create-service.mjs</C> (the generator). The generator refuses to
-          overwrite an existing <C>apps/&lt;name&gt;</C> or{' '}
-          <C>database/tables/&lt;name&gt;.table.ts</C>.
+          overwrite an existing <C>apps/&lt;name&gt;</C>.
         </Callout>
       </Section>
 
       {/* ------------------------------------------------------------------ */}
       <Section title="What a service is made of">
         <Mermaid
-          caption="Every service has the same small shape — copy apps/catalog."
+          caption="Every service has the same small shape — copy apps/demo."
           chart={`
 flowchart LR
     M["main.ts<br/><small>set env, listen</small>"] --> A["app.ts<br/><small>json → corePipeline → routes → errorHandler</small>"]
@@ -107,7 +109,7 @@ flowchart LR
             <CodeBlock
               lang="properties"
               title="database/db.properties"
-              code={`services=catalog,orders   # ← added 'orders'
+              code={`services=demo,orders   # ← added 'orders'
 service.orders.description=Orders service.
 service.orders.db=mongo
 
@@ -118,7 +120,7 @@ engine=mongo`}
               lang="ts"
               title="database/services.ts (generated)"
               code={`export const SERVICES = {
-  catalog: { description: '…', db: 'mongo' },
+  demo:    { description: '…', db: 'mongo' },
   orders:  { description: 'Orders service.', db: 'mongo' },   // ← added
 } as const satisfies Record<string, ServiceConfig>;`}
             />
@@ -126,22 +128,27 @@ engine=mongo`}
 
           <Step title="Declare its tables">
             Add a <C>database/tables/&lt;name&gt;.table.ts</C> for each table the service
-            owns. Use <C>scope: ['&lt;service&gt;']</C> (or include <C>'common'</C> tables
-            that every service shares). <C>scope</C> autocompletes from <C>services.ts</C>,
-            so a typo is a compile error.
+            owns. The scaffold <strong>doesn't</strong> ship one — registration is
+            enough — so copy this starter table (it matches the CRUD example in{' '}
+            <C>src/lib/dal/example-crud.ts</C>), rename it, and tweak the columns. Use{' '}
+            <C>scope: ['&lt;service&gt;']</C> (or include <C>'common'</C> tables that every
+            service shares). <C>scope</C> autocompletes from <C>services.ts</C>, so a typo
+            is a compile error.
             <CodeBlock
               lang="ts"
               title="database/tables/orders.table.ts"
               code={`import { defineTable } from '../define.ts';
 
 export default defineTable({
-  name: 'orders',
-  scope: ['orders'],
+  name: 'items',
+  scope: ['orders'],                 // ← your service (or 'common')
   columns: {
-    id:     { type: 'id' },
-    ref:    { type: 'string', required: true, unique: true },
-    total:  { type: 'number', required: true },
-    orgId:  { type: 'string', index: true },
+    id:    { type: 'id' },
+    key:   { type: 'string', required: true, unique: true },
+    name:  { type: 'string', required: true, index: true },
+    qty:   { type: 'number', required: true, default: 0 },
+    tags:  { type: 'string[]' },
+    orgId: { type: 'string', index: true },   // pooled tenancy stamps it; MINT silo drops it
   },
 });`}
             />
@@ -162,7 +169,7 @@ MINT_REPO=$PWD node MINT/dist/cli/main.js run db --service orders`}
 
           <Step title="Scaffold the app">
             Create <C>apps/&lt;name&gt;</C> and copy the shape of{' '}
-            <DocLink to="about/catalog-service">apps/catalog</DocLink>: add{' '}
+            <DocLink to="about/demo-service">apps/demo</DocLink>: add{' '}
             <C>@hive/connection</C>, <C>@hive/dal</C>, <C>@hive/security</C> and{' '}
             <C>@hive/middleware</C> as <C>workspace:*</C> deps, then{' '}
             <C>pnpm install &amp;&amp; npx nx sync</C>.
@@ -195,7 +202,7 @@ export function makeRepository(): Repository {
             <CodeBlock
               lang="bash"
               code={`cd apps/orders && npm run dev
-# → listening on http://localhost:4020`}
+# → orders listening on the PORT the scaffold assigned in service.properties`}
             />
           </Step>
         </Steps>
@@ -211,11 +218,11 @@ export function makeRepository(): Repository {
           lang="bash"
           code={`TOKEN=$(node src/dev/token.ts org-demo user-demo)
 
-curl localhost:4020/health
-curl -XPOST localhost:4020/products -H "authorization: Bearer $TOKEN" \\
+curl localhost:4030/health
+curl -XPOST localhost:4030/items -H "authorization: Bearer $TOKEN" \\
   -H 'content-type: application/json' \\
-  -d '{"sku":"sku-1","name":"Widget","price":25}'
-curl localhost:4020/products -H "authorization: Bearer $TOKEN"`}
+  -d '{"key":"k-1","name":"Widget","qty":25}'
+curl localhost:4030/items -H "authorization: Bearer $TOKEN"`}
         />
       </Section>
 
@@ -240,7 +247,7 @@ curl localhost:4020/products -H "authorization: Bearer $TOKEN"`}
         <Card icon="🗄️" title="Database & schema" to="docs/database">
           Declare tables and run <C>mint run db</C>.
         </Card>
-        <Card icon="📦" title="The catalog service" to="about/catalog-service">
+        <Card icon="📦" title="The demo service" to="about/demo-service">
           The reference service to copy.
         </Card>
         <Card icon="🌊" title="How data flows" to="about/how-data-flows">
