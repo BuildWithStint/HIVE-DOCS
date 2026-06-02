@@ -47,14 +47,14 @@ export default function MintAgents() {
       <Section title="Before you change anything">
         <ol>
           <li>
-            MINT is the <strong>extraction layer</strong>. Changes to HIVE's <C>dal-core</C>,{' '}
-            <C>tenant-context</C>, <C>security</C>, or the secret-sauce-vs-standard split affect
-            MINT. Keep MINT's swaps + silo notes in sync with those modules.
+            MINT is the <strong>extraction layer</strong>. Changes to HIVE's{' '}
+            <C>@hive/dal</C>, <C>@hive/connection</C>, or the pooled-vs-silo split affect
+            MINT. Keep MINT's vendoring + silo notes in sync with those packages.
           </li>
           <li>
-            The optimized platform implementations (e.g. <C>RangeReservationAllocator</C>)
-            MUST NOT ship in an extract — register every such impl in the{' '}
-            <C>SecretSauceRegistry</C> with its standard replacement.
+            On extract, MINT <strong>vendors</strong> <C>@hive/connection</C> and{' '}
+            <C>@hive/dal</C> (the query core + the one chosen adapter) into the output and
+            rewrites the imports, so the copy runs with no workspace.
           </li>
           <li>
             After a confirmed change, update <DocLink to="mint/CONTEXT">CONTEXT</DocLink> in

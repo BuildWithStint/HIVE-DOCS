@@ -131,30 +131,30 @@ flowchart TD
       <Section title="Running the sample service">
         <CodeBlock
           lang="bash"
-          code={`npx nx build @hive/tasks            # compile it
-node apps/tasks/dist/main.js    # run it (needs MONGO_URL in env.local)`}
+          code={`DB=mongo node apps/catalog/src/main.ts   # needs MONGO_URL in env.local`}
         />
         <p>
-          The service reads config, connects to Mongo, and listens on its configured
-          port (<C>service.http.port</C>, default 4010). See{' '}
-          <DocLink to="about/sample-tasks-service">the sample Tasks service</DocLink>.
+          The service sets <C>HIVE_SERVICE_DIR</C>, connects to Mongo, and listens on{' '}
+          <C>PORT</C> (default 4020). See{' '}
+          <DocLink to="about/catalog-service">the catalog service</DocLink>.
         </p>
       </Section>
 
-      <Section title="Database test helpers">
-        <Sub title="verify-postgres.mjs" />
+      <Section title="Extract a standalone copy (MINT)">
+        <Sub title="mint extract" />
         <p>
-          Runs the <strong>whole SQL path</strong> (schema → compile → migrate →
-          repository CRUD + tenant isolation) against a real Postgres engine running
-          in-process (PGlite — no Docker needed).
+          MINT vendors <C>@hive/connection</C> + <C>@hive/dal</C> (the query core + the
+          chosen adapter) into a standalone copy that runs with no workspace.
         </p>
         <CodeBlock
           lang="bash"
-          code={`npx nx build @hive/dal-sql
-node packages/dal-sql/scripts/verify-postgres.mjs`}
+          code={`MINT_REPO=$PWD node MINT/dist/cli/main.js extract \\
+  --microservice catalog --db mongo --mode silo \\
+  --name catalog-mongo --token local-dev`}
         />
         <p>
-          Details: <DocLink to="docs/testing-postgres">testing with Postgres</DocLink>.
+          Use <C>--db postgres</C> for the Postgres adapter. Details:{' '}
+          <DocLink to="docs/testing-postgres">testing with Postgres</DocLink>.
         </p>
       </Section>
 
@@ -182,8 +182,8 @@ node packages/dal-sql/scripts/verify-postgres.mjs`}
             ['Build one package', <C>npx nx build @hive/&lt;name&gt;</C>],
             ['Test one package', <C>npx nx test @hive/&lt;name&gt;</C>],
             ['Verify the whole repo', <C>npx nx run-many -t typecheck test --all</C>],
-            ['Run the sample API', <C>npx nx build @hive/tasks → node apps/tasks/dist/main.js</C>],
-            ['Verify the SQL path live', <C>node packages/dal-sql/scripts/verify-postgres.mjs</C>],
+            ['Run the sample API', <C>DB=mongo node apps/catalog/src/main.ts</C>],
+            ['Extract a standalone copy', <C>node MINT/dist/cli/main.js extract …</C>],
             ['Scaffold a package', <C>npx nx g @nx/js:library …</C>],
           ]}
         />

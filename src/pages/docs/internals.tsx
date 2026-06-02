@@ -17,7 +17,7 @@ export const meta = {
   group: 'docs',
   file: 'internals',
   title: 'How every layer works internally',
-  order: 3,
+  order: 4,
 };
 
 export default function Internals() {
@@ -30,8 +30,9 @@ export default function Internals() {
           <>
             The engine-room tour. <DocLink to="about/how-data-flows">How data flows</DocLink>{' '}
             follows one request from the outside; this page opens up each layer and
-            explains the machinery <em>inside</em> it — the classes, the data, and
-            the design choices — in plain language.
+            explains the machinery <em>inside</em> it — in plain language. Today the
+            stack is three pieces: <DocLink to="about/connection">@hive/connection</DocLink>,{' '}
+            <DocLink to="about/dal">@hive/dal</DocLink>, and a thin service.
           </>
         }
       />
@@ -39,20 +40,19 @@ export default function Internals() {
       <Callout kind="key" title="The four golden rules behind all of this">
         <ol>
           <li>
-            <strong>Tenant isolation is central and unskippable</strong> — enforced
-            by one frozen base class.
+            <strong>Tenant isolation is central and unskippable</strong> — enforced by
+            the <C>@hive/dal</C> Repository + its injected tenant provider.
           </li>
           <li>
-            <strong>Business code is engine-neutral</strong> — no Mongo/SQL words
-            leak in.
+            <strong>Business code is engine-neutral</strong> — no Mongo/SQL words leak
+            in; it speaks <C>QuerySpec</C>.
           </li>
           <li>
-            <strong>Fail closed</strong> — missing tenant/token/config means refuse,
-            never guess.
+            <strong>Fail closed</strong> — missing tenant/env means refuse, never guess.
           </li>
           <li>
-            <strong>Dependency Inversion</strong> — inject drivers, loggers,
-            verifiers, so everything is easy to test.
+            <strong>Dependency Inversion</strong> — inject the tenant provider, the SQL
+            executor, the db type, so everything is easy to test and to ship.
           </li>
         </ol>
       </Callout>
@@ -63,325 +63,177 @@ export default function Internals() {
           back up. Each box has exactly one job.
         </p>
         <Mermaid
-          caption="The main request path (top to bottom). schema and config sit beside it, feeding every layer."
+          caption="The main request path (top to bottom). connection feeds the adapters."
           chart={`
 flowchart TD
-    REQ([HTTP request]) --> OBS["observability<br/><small>give the request an id, start timing</small>"]
-    OBS --> MW["middleware<br/><small>requestContext → authenticate → tenant</small>"]
-    MW --> SEC["security<br/><small>verify token → claims</small>"]
-    SEC --> TC["tenant-context<br/><small>park orgId on a per-request notepad</small>"]
-    TC --> ROUTES["your routes<br/><small>normal business code</small>"]
-    ROUTES --> CORE["dal-core<br/><small>frozen base: stamp + filter by orgId</small>"]
-    CORE --> ADP["dal-mongoose / dal-sql<br/><small>translate neutral query → Mongo / SQL</small>"]
+    REQ([HTTP request]) --> TIMER["request timer<br/><small>assign requestId, start timing</small>"]
+    TIMER --> MW["core pipeline<br/><small>verify token → runWithTenant(orgId)</small>"]
+    MW --> ROUTES["your routes<br/><small>normal business code</small>"]
+    ROUTES --> REPO["@hive/dal Repository<br/><small>stamp + filter by orgId</small>"]
+    REPO --> ADP["mongo / postgres adapter<br/><small>translate QuerySpec → Mongo / SQL</small>"]
     ADP --> DB[("database")]
-    SCHEMA["schema<br/><small>describe a table once</small>"] -. feeds .-> CORE
-    CONFIG["config<br/><small>constants + secrets</small>"] -. feeds .-> MW
+    CONN["@hive/connection<br/><small>env + DB client</small>"] -. feeds .-> ADP
 `}
         />
       </Section>
 
-      <Section title="1. tenant-context — the per-request notepad">
+      <Section title="1. connection — env + the database client">
         <Table
           head={['', '']}
           rows={[
-            [<strong>Job</strong>, 'Remember "who is this request for?" (orgId) without passing it through every function by hand.'],
-            [<strong>Inside</strong>, "Wraps Node's AsyncLocalStorage — a sticky note that travels with the request, even across await points."],
+            [<strong>Job</strong>, 'Resolve config and hand back one lazy client per engine. Nothing else.'],
+            [<strong>Inside</strong>, <>An env resolver (<C>requireEnv</C> / <C>optionalEnv</C>) and one connection file per engine (<C>mongo-connection.ts</C>, <C>postgres-connection.ts</C>).</>],
           ]}
         />
         <ul>
           <li>
-            <C>runWithTenant(&#123; orgId &#125;, fn)</C> — runs <C>fn</C> with the note
-            attached.
+            <C>requireEnv(key)</C> throws when a required value is missing (fail closed);{' '}
+            <C>optionalEnv(key, fallback)</C> returns a default.
           </li>
           <li>
-            <C>getOrgIdOrThrow()</C> — reads the note; if there's no note (no tenant
-            in scope) it <strong>throws</strong>. That's "fail closed": no tenant →
-            no data.
+            Each engine keeps its own env var (<C>MONGO_URL</C> / <C>POSTGRES_URL</C>)
+            and its own close (<C>closeDb</C> / <C>closePool</C>). We never merge engines.
           </li>
         </ul>
         <Callout kind="note" title="Why it matters">
-          Because the orgId lives here, the data layer can read it automatically.
-          Nobody has to remember to pass it down, so nobody can forget.
+          Because connecting lives here, every service and every MINT extract reuses the
+          exact same, engine-specific plumbing. See{' '}
+          <DocLink to="about/connection">connection</DocLink>.
         </Callout>
       </Section>
 
-      <Section title="2. security — proving who you are">
+      <Section title="2. dal — the neutral query language">
         <p>
-          <strong>Job:</strong> turn an opaque token into trusted <strong>claims</strong>{' '}
-          (<C>sub</C> = user, <C>orgId</C> = tenant, roles, …).
+          Business code never writes Mongo's <C>$gte</C> or SQL's <C>WHERE</C>. It writes
+          a small, declarative <C>QuerySpec</C>:
         </p>
+        <CodeBlock
+          lang="ts"
+          code={`{
+  entity: 'products',
+  operation: 'FETCH',
+  filters: [{ field: 'price', op: 'lt', value: 1000 }],
+  sort:    [{ field: 'price', direction: 'desc' }],
+  pagination: { limit: 10, offset: 0 },
+}`}
+        />
         <p>
-          <strong>Inside:</strong> it defines a <strong>port</strong> (an interface)
-          called <C>TokenVerifier</C> with one method, <C>verify(token) → claims</C>.
-          The platform never hard-codes <em>how</em> a token is checked — a service
-          injects a real verifier (e.g. a JWT verifier).
+          The operators are deliberately limited to ones <strong>every</strong> engine
+          supports: <C>eq, ne, gt, gte, lt, lte, in, nin, contains</C>. If an operator
+          can't work on all engines, it doesn't go in.
         </p>
-        <ul>
-          <li>
-            <C>authenticate</C> uses the injected verifier. Bad/missing token →{' '}
-            <strong>401</strong>, and the request stops before touching the database.
-          </li>
-          <li>
-            <C>authorize</C> checks roles/permissions for routes that need them.
-          </li>
-        </ul>
-        <Callout kind="danger" title="The sample verifier is demo-only">
-          The sample service ships a <C>SampleTokenVerifier</C> for local demos.
-          Never use it in production — inject a real JWT verifier.
-        </Callout>
       </Section>
 
-      <Section title="3. middleware — the assembly line (Tier-1)">
+      <Section title="3. dal — the Repository">
         <p>
-          <strong>Job:</strong> run the right steps, in the right order, for every
-          request. <C>corePipeline(&#123; verifier &#125;)</C> returns an ordered list
-          of Express handlers. <strong>The order is fixed</strong> and must not change.
+          <C>Repository</C> is the thin convenience over an adapter:{' '}
+          <C>fetch, fetchOne, insert, update, remove, count</C>. Tenancy is{' '}
+          <strong>injected</strong>, not hard-coded:
         </p>
         <Mermaid
-          caption="Tier-1 order is fixed. Tier-2 middleware slots between your routes and the error handler."
+          caption="The Repository applies the injected tenant, then calls the adapter's one execute() method."
+          chart={`
+flowchart TD
+    subgraph Repo["Repository"]
+      TP["tenantProvider?.()"] --> SPEC["build QuerySpec (tenantId)"]
+      SPEC --> EX["adapter.execute(spec)"]
+    end
+    EX --> ADP["engine adapter"]
+`}
+        />
+        <Table
+          head={['Operation', 'What the Repository does']}
+          rows={[
+            ['Every fetch', <>Passes the current <C>tenantId</C> (from the provider) into the spec; the adapter scopes by <C>orgId</C>.</>],
+            ['Every insert', <>Carries the <C>tenantId</C> so the adapter stamps <C>orgId</C> on the new row.</>],
+            ['Every update/remove', 'The tenant filter is re-applied — you can\u2019t touch another tenant\u2019s row even by id.'],
+            ['Pooled vs silo', <>Pooled passes <C>currentOrgId</C> as the provider; a silo extract passes none and runs unscoped for one tenant.</>],
+          ]}
+        />
+        <Callout kind="key" title="Open/Closed principle">
+          The Repository contains <strong>zero</strong> Mongo/SQL — only the wiring. Add
+          a new engine by adding a new adapter, never by editing the Repository.
+        </Callout>
+      </Section>
+
+      <Section title="4. dal — the engine adapters">
+        <p>Each adapter implements one method, <C>execute(spec)</C>, and returns rows + count + the native query it ran.</p>
+
+        <Sub title="(a) mongo-adapter" />
+        <ul>
+          <li>
+            Translates <C>QuerySpec</C> → a Mongo filter/sort and calls the driver via{' '}
+            <C>@hive/connection/mongo</C>.
+          </li>
+          <li>
+            <C>contains</C> becomes a <strong>safe</strong> regex: special characters in
+            user input are escaped first, so a user can't inject a malicious regex.
+          </li>
+          <li>Maps Mongo's <C>_id</C> to a string <C>id</C> on the way out.</li>
+        </ul>
+
+        <Sub title="(b) sql-adapter (portable) and postgres-adapter (concrete)" />
+        <ul>
+          <li>
+            <C>sql-adapter</C> emits portable ANSI SQL over an injected{' '}
+            <C>SqlExecutor</C>, always binding values as <strong>parameters</strong> —
+            never gluing user input into the SQL string. That's how SQL injection is
+            prevented.
+          </li>
+          <li>
+            <C>postgres-adapter</C> extends it with a Postgres dialect (<C>$1</C>{' '}
+            placeholders, <C>ILIKE</C>, <C>RETURNING</C>) over{' '}
+            <C>@hive/connection/postgres</C>.
+          </li>
+        </ul>
+        <Callout kind="warn" title="postgres is not sql">
+          The portable <C>sql</C> base and the concrete <C>postgres</C> engine keep
+          separate names and connections. See{' '}
+          <DocLink to="docs/testing-postgres">testing with Postgres</DocLink>.
+        </Callout>
+      </Section>
+
+      <Section title="5. the service — tenancy + the request pipeline">
+        <p>
+          A service (e.g. <DocLink to="about/catalog-service">apps/catalog</DocLink>) owns
+          only what's service-specific: its routes, its db type, and its tenancy.
+        </p>
+        <Mermaid
+          caption="Tier-1 order is fixed. Tier-2 middleware slots between routes and the error handler."
           chart={`
 flowchart LR
     A["1. requestContext<br/><small>assign requestId</small>"] --> B["2. authenticate<br/><small>verify token</small>"]
     B --> C["3. tenant<br/><small>runWithTenant(orgId)</small>"]
     C --> R["your routes"]
-    R --> T2["Tier-2<br/><small>rate-limit, validation</small>"]
+    R --> T2["Tier-2<br/><small>timing, validation</small>"]
     T2 --> E["errorHandler<br/><small>always last</small>"]
 `}
         />
+        <ul>
+          <li>
+            <strong>Tenancy</strong> uses Node's <C>AsyncLocalStorage</C>:{' '}
+            <C>runWithTenant(&#123; orgId &#125;, fn)</C> parks the orgId;{' '}
+            <C>currentOrgId()</C> reads it and throws if no tenant is in scope.
+          </li>
+          <li>
+            <C>make-repository.ts</C> is the one DAL wiring: it picks the db type and
+            passes <C>currentOrgId</C> (pooled) or nothing (silo).
+          </li>
+        </ul>
         <Callout kind="warn" title="Why fixed order?">
           You must know <em>who</em> (authenticate) before you set <em>which tenant</em>{' '}
-          (tenant), and error handling must be last so it catches everything. Tier-2
-          middleware goes <strong>after</strong> <C>corePipeline</C> and{' '}
-          <strong>before</strong> <C>errorHandler</C>. Never reorder Tier-1.
+          (tenant), and error handling must be last so it catches everything. Never
+          reorder Tier-1.
         </Callout>
-      </Section>
-
-      <Section title="4. dal-core — the data contract + frozen core">
-        <p>This is the heart. It has two parts.</p>
-
-        <Sub title="(a) The neutral query language" />
-        <p>
-          Business code never writes Mongo's <C>$gte</C> or SQL's <C>WHERE</C>. It
-          writes a small, declarative <C>QuerySpec</C>:
-        </p>
-        <CodeBlock
-          lang="ts"
-          code={`{
-  where: [{ field: 'priority', op: 'gte', value: 3 }],
-  sort:  [{ field: 'id', direction: 'asc' }],
-  limit: 20,
-  offset: 0,
-}`}
-        />
-        <p>
-          The operators are deliberately limited to ones <strong>every</strong> engine
-          supports: <C>eq, ne, gt, gte, lt, lte, in, contains</C>. If an operator
-          can't work on all engines, it doesn't go in.
-        </p>
-
-        <Sub title="(b) The frozen base repository" />
-        <p>
-          <C>AbstractBaseRepository</C> is the class every adapter extends. It does
-          the tenant work <strong>once</strong>, so no service can skip it:
-        </p>
-        <Mermaid
-          caption="What the frozen base does automatically on every operation."
-          chart={`
-flowchart TD
-    subgraph Base["AbstractBaseRepository (frozen)"]
-      READ["read → merge orgId filter"]
-      CREATE["create → strip id/orgId,<br/>allocate id, stamp orgId + timestamps"]
-      UPD["update/delete → re-apply tenant filter"]
-      GUARD{"tenant in scope?"}
-    end
-    GUARD -- "no" --> REJECT["reject (fail closed)"]
-    GUARD -- "yes" --> READ
-    READ --> EX["execute* hooks"]
-    CREATE --> EX
-    UPD --> EX
-    EX --> ADP["engine adapter fills these in"]
-`}
-        />
-        <Table
-          head={['Operation', 'What the base guarantees']}
-          rows={[
-            ['Every read', <>Merges <C>orgId = current tenant</C> into the query. Pass an empty query and you still only see your tenant's rows.</>],
-            ['Every create', <>Strips any <C>id/_id/orgId</C> a caller sent, allocates a fresh id, stamps <C>orgId</C> from the notepad, sets <C>createdAt/updatedAt</C>.</>],
-            ['Every update/delete', "Re-applies the tenant filter — you can't touch another tenant's row even by id."],
-            ['No tenant in scope', 'Every method rejects (fails closed).'],
-          ]}
-        />
-        <Callout kind="key" title="Open/Closed principle">
-          The base contains <strong>zero</strong> Mongo/SQL — only the rules. Add a
-          new engine by adding a new adapter, never by editing the base.
-        </Callout>
-
-        <Sub title="(c) Sequential ids" />
-        <p>
-          HIVE uses boring sequential numbers (1, 2, 3…) via an <C>IdAllocator</C> so
-          ids look identical on Mongo and SQL.
-        </p>
-      </Section>
-
-      <Section title="5. dal-mongoose — the MongoDB adapter">
-        <p>
-          <strong>Job:</strong> implement the <C>execute*</C> hooks using Mongoose,
-          and translate <C>QuerySpec</C> → Mongo.
-        </p>
-        <ul>
-          <li>
-            <C>MongooseRepository&lt;T&gt;</C> extends the base and has{' '}
-            <strong>no tenant logic</strong> — the base already added the filter.
-          </li>
-          <li>
-            <C>mongoose-query.ts</C> converts a <C>QuerySpec</C> into a Mongo
-            filter/sort. <C>contains</C> becomes a <strong>safe</strong> regex: special
-            characters in user input are escaped first, so a user can't inject a
-            malicious regex.
-          </li>
-          <li>
-            <C>to-domain.ts</C> cleans a raw Mongo document (<C>_id</C>, <C>__v</C>)
-            into a tidy domain object (<C>id</C>, no <C>__v</C>).
-          </li>
-        </ul>
-        <Sub title="Id allocation (two strategies)" />
-        <Table
-          head={['Allocator', 'How', 'Used by']}
-          rows={[
-            [<C>CounterAllocator</C>, 'One atomic increment per insert, gap-free.', <>Shipped to clients via <DocLink to="about/how-mint-works">MINT</DocLink>.</>],
-            [<C>RangeReservationAllocator</C>, 'Reserves blocks of ids for speed.', 'HIVE-internal "secret sauce"; MINT swaps it for the counter version.'],
-          ]}
-        />
-      </Section>
-
-      <Section title="6. dal-sql — the SQL/Postgres adapter">
-        <p>
-          <strong>Job:</strong> the same <C>execute*</C> hooks, but emitting SQL.
-        </p>
-        <ul>
-          <li>
-            <C>SqlRepository&lt;T&gt;</C> extends the base; <C>sql-query.ts</C> turns a{' '}
-            <C>QuerySpec</C> into a <C>WHERE</C> + <C>ORDER BY</C>, always binding
-            values as <strong>parameters</strong> (<C>?</C>), never gluing user input
-            into the SQL string. That's how SQL injection is prevented.
-          </li>
-          <li>
-            <strong>Identifiers are double-quoted</strong> (<C>"orgId"</C>,{' '}
-            <C>"TASKS_TASK"</C>) to match what the schema compiler emits.
-          </li>
-        </ul>
-        <Callout kind="note" title="A real bug this caught">
-          The adapter once emitted <em>unquoted</em> identifiers while the schema
-          compiler emits <em>double-quoted</em> ones, so queries didn't match the
-          migrated tables. That's why we test against a live engine — see{' '}
-          <DocLink to="docs/testing-postgres">testing with Postgres</DocLink>.
-        </Callout>
-      </Section>
-
-      <Section title="7. schema — describe a table once, generate everything">
-        <p>
-          <strong>Job:</strong> you write <strong>one</strong> description of a table;
-          the system produces the SQL table, the Mongo indexes, and the TypeScript
-          type.
-        </p>
-        <Mermaid
-          caption="One source of truth, three generated outputs — zero drift."
-          chart={`
-flowchart LR
-    DEF["defineSchema(...)"] --> SQL["compileToSql → CREATE TABLE"]
-    DEF --> MONGO["mongoIndexCommands → indexes"]
-    DEF --> TYPES["compileToTypes → TS interface"]
-`}
-        />
-        <ul>
-          <li>
-            <C>scope: 'common'</C> → a shared table with <strong>no</strong> prefix
-            (e.g. <C>USER</C>). <C>scope: 'tasks'</C> + <C>TASK</C> →{' '}
-            <C>TASKS_TASK</C>.
-          </li>
-          <li>
-            It <strong>injects</strong> the managed columns for you: <C>id</C>,{' '}
-            <C>orgId</C>, <C>createdAt</C>, <C>updatedAt</C>, <C>deletedAt</C>. You
-            never declare them.
-          </li>
-          <li>
-            Every index is <strong>orgId-leading</strong>, so tenant-scoped queries
-            stay fast.
-          </li>
-        </ul>
-      </Section>
-
-      <Section title="8. config — layered constants and secrets">
-        <p>
-          <strong>Job:</strong> give every layer its settings, with secrets kept out
-          of git. <C>loadConfig(&#123; rootDir, serviceDir &#125;)</C> merges sources
-          in priority order:
-        </p>
-        <CodeBlock
-          lang="text"
-          code={`hive.properties  <  service.properties  <  env.local  <  process.env`}
-        />
-        <ul>
-          <li>
-            <C>getRequired(key)</C> — returns the value or <strong>throws</strong> if
-            missing (fail closed).
-          </li>
-          <li>
-            <C>getNumber</C> / <C>getBoolean</C> / <C>getString(key, default)</C> —
-            typed reads.
-          </li>
-        </ul>
-        <Callout kind="warn" title="A gotcha that bit us">
-          Always pass <C>rootDir</C> so <C>hive.properties</C> is found even when the
-          process starts from another folder.
-        </Callout>
-      </Section>
-
-      <Section title="9. observability — logs and metrics that know the tenant">
-        <p>
-          <strong>Job:</strong> structured logging + metrics that automatically
-          include <C>requestId</C> and <C>orgId</C>, so you can trace one request or
-          one tenant. A <C>StructuredLogger</C> emits JSON log lines; because the
-          tenant lives on the notepad, logs are tagged with it without extra
-          plumbing.
-        </p>
-      </Section>
-
-      <Section title="10. models-common — the shared entities">
-        <p>
-          <strong>Job:</strong> entities that <strong>every</strong> service shares —{' '}
-          <C>User</C>, <C>Org</C>, and the RBAC (role/permission) tables — plus
-          helpers. They use <C>scope: 'common'</C> so they have no service prefix and
-          can be reused everywhere.
-        </p>
-      </Section>
-
-      <Section title="11. apps/tasks — how it's all assembled">
-        <p>The sample service ties every layer together:</p>
-        <Mermaid
-          caption="The wiring of the sample Tasks service."
-          chart={`
-flowchart TD
-    SCHEMA["TASK schema"] --> MODEL["Mongoose model"]
-    MODEL --> REPO["TaskRepository extends MongooseRepository"]
-    REPO --> APP["createApp: express.json → corePipeline → routes → errorHandler"]
-    APP --> MAIN["main.ts: loadConfig → connect Mongo → listen"]
-    MAIN --> TEST["integration test proves org-B can't see org-A's tasks"]
-`}
-        />
-        <p>
-          Read it alongside{' '}
-          <DocLink to="about/sample-tasks-service">the sample Tasks service</DocLink>{' '}
-          to see each wire in code.
-        </p>
       </Section>
 
       <Section title="How MINT fits (the packaging tool)">
         <p>
-          MINT is <strong>not</strong> a runtime layer — it's a separate, private
-          tool that produces a <strong>shippable copy</strong> of the platform for a
-          customer. It swaps HIVE-internal "secret sauce" (like the range
-          id-allocator) for shippable equivalents (the counter allocator), and can
+          MINT is <strong>not</strong> a runtime layer — it's a separate, private tool
+          that produces a <strong>shippable copy</strong> of a service for a customer. On
+          extract it <strong>vendors</strong> <C>@hive/connection</C> and{' '}
+          <C>@hive/dal</C> (the query core + the one chosen adapter) into the output and
+          rewrites the imports, so the copy runs standalone with no workspace. It can
           reshape a service for a single tenant ("silo" mode). Full story:{' '}
           <DocLink to="about/how-mint-works">how MINT works</DocLink>.
         </p>
@@ -389,12 +241,12 @@ flowchart TD
 
       <Section title="One-paragraph summary">
         <Callout kind="key">
-          Each layer has one job and a clean seam (a port or a base class) to the
-          next. Identity is proven once (<C>security</C>), parked once
-          (<C>tenant-context</C>), and enforced once (<C>dal-core</C>'s frozen base),
+          Identity is proven once (the pipeline) and parked once (<C>AsyncLocalStorage</C>),
+          and enforced once (the <C>@hive/dal</C> Repository's injected tenant provider),
           so tenant isolation can't be skipped. Business code speaks a neutral query
-          language, and small per-engine adapters translate it — which is why HIVE
-          can run on MongoDB today and SQL tomorrow without touching business code.
+          language, and small per-engine adapters translate it — which is why a service
+          can run on MongoDB or Postgres without touching business code, and why MINT can
+          vendor the whole data layer into a standalone copy.
         </Callout>
       </Section>
 

@@ -67,15 +67,15 @@ export default function MintContext() {
             services, or disk.
           </li>
           <li>
-            Decided secret-sauce swap: <C>RangeReservationAllocator</C> →{' '}
-            <C>CounterAllocator</C> (role <C>idAllocator</C>, module <C>@hive/dal-mongoose</C>).
-            The optimization never leaves the platform; clients get the correct standard impl.
+            Decided extract vendoring: copy <C>@hive/connection</C> + <C>@hive/dal</C>{' '}
+            (the query core + the one chosen adapter) into the output and rewrite the
+            imports, so the standalone copy carries its whole data layer with no
+            workspace dependency.
           </li>
           <li>
-            Silo mode performs the data-level swap (tenancy=single + binding swap) and records
-            the code-level transforms (strip <C>orgId</C> + index prefix, <C>corePipeline</C> →{' '}
-            <C>corePipelineSilo</C>, base-repo scoping no-op, disable <C>tenantGuard</C> plugin)
-            as authoritative notes for the file generator + audit.
+            Silo mode strips tenancy at the wiring seam (<C>make-repository.ts</C>,
+            marked <C>@mintable</C>): the pooled build passes <C>currentOrgId</C> as the
+            tenant provider; the silo extract removes it and runs unscoped for one tenant.
           </li>
           <li>
             Operator authorized BEFORE the audit begins; any post-begin failure marks the audit

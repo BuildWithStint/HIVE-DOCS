@@ -15,7 +15,7 @@ export const meta = {
   group: 'docs',
   file: 'testing-postgres',
   title: 'Testing with Postgres',
-  order: 4,
+  order: 5,
 };
 
 export default function TestingPostgres() {
@@ -24,42 +24,31 @@ export default function TestingPostgres() {
       <PageHeader
         kicker="Setup & Reference"
         title="Testing against PostgreSQL"
-        lead="You don't need PostgreSQL installed on your machine. Pick one of the options below, then point DATABASE_URL at it in env.local."
+        lead="The same neutral query runs on Postgres via the postgres-adapter. Point POSTGRES_URL at any Postgres in env.local, then run the service (or a MINT extract) with DB=postgres."
       />
 
-      <Section title="Already verified: in-process Postgres (zero setup)">
+      <Section title="How the Postgres path is wired">
         <p>
-          The SQL flow is verified end-to-end against a <strong>real Postgres engine
-          running in-process</strong> via PGlite (Postgres compiled to WASM — no
-          Docker, no server). Run it any time:
+          The <C>postgres-adapter</C> in <DocLink to="about/dal">@hive/dal</DocLink>{' '}
+          extends the portable <C>sql-adapter</C> with a Postgres dialect, and talks to
+          the database through <DocLink to="about/connection">@hive/connection/postgres</DocLink>{' '}
+          (which reads <C>POSTGRES_URL</C>). Values are always bound as parameters
+          (<C>$1, $2, …</C>) — never glued into the SQL text.
         </p>
-        <CodeBlock
-          lang="bash"
-          code={`npx nx build @hive/dal-sql
-node packages/dal-sql/scripts/verify-postgres.mjs`}
-        />
         <Mermaid
-          caption="What verify-postgres.mjs runs, in order. It prints 'PostgreSQL flow OK' when all checks pass."
+          caption="The same QuerySpec, translated to parameterized Postgres SQL."
           chart={`
 flowchart LR
-    A["defineSchema"] --> B["compileToSql"]
-    B --> C["migrate<br/>(CREATE TABLE)"]
-    C --> D["SqlRepository CRUD"]
-    D --> E["tenant isolation<br/>checks"]
-    E --> OK(["PostgreSQL flow OK ✅"])
+    SPEC["QuerySpec"] --> PA["postgres-adapter<br/><small>$1 placeholders, ILIKE, RETURNING</small>"]
+    PA --> CONN["@hive/connection/postgres<br/><small>POSTGRES_URL → pg pool</small>"]
+    CONN --> DB[("Postgres")]
 `}
         />
-        <Callout kind="note" title="Why a real engine, not just fakes?">
-          Running this for real caught a bug: the SQL adapter emitted{' '}
-          <strong>unquoted</strong> identifiers while the schema compiler emits{' '}
-          <strong>double-quoted</strong> ones, so generated queries didn't match the
-          migrated tables (<C>syntax error at or near "USER"</C>). The adapter now
-          quotes identifiers to match.
+        <Callout kind="warn" title="postgres is not sql">
+          The portable <C>sql</C> adapter (driver-neutral, injected executor) and the
+          concrete <C>postgres</C> adapter are kept separate — same query, different
+          dialect and connection.
         </Callout>
-        <p>
-          The options below are for testing against a <strong>standalone</strong>{' '}
-          Postgres (e.g. to point a running service at it).
-        </p>
       </Section>
 
       <Section title="Option A — Docker (recommended, one command)">
@@ -74,7 +63,7 @@ flowchart LR
   -d postgres:16`}
         />
         <p>Then add to <C>env.local</C> (git-ignored):</p>
-        <CodeBlock lang="bash" title="env.local" code={`DATABASE_URL=postgres://hive:hive@localhost:5432/hive`} />
+        <CodeBlock lang="bash" title="env.local" code={`POSTGRES_URL=postgres://hive:hive@localhost:5432/hive`} />
         <p>Stop / start / remove later:</p>
         <CodeBlock
           lang="bash"
@@ -82,46 +71,12 @@ flowchart LR
 docker start hive-pg
 docker rm -f hive-pg`}
         />
-        <Sub title="Quick sanity check (creates a table via the schema layer)" />
-        <p>
-          The <C>dal-sql</C> adapter and the schema migrator use an injected executor.
-          A minimal <C>pg</C>-backed executor looks like this (Postgres uses <C>$1</C>{' '}
-          placeholders, so we rewrite <C>?</C> → <C>$n</C>):
-        </p>
-        <CodeBlock
-          lang="ts"
-          code={`import { Client } from 'pg';
-import { migrateSql, defineSchema, type DdlExecutor } from '@hive/schema';
-
-const client = new Client({ connectionString: process.env.DATABASE_URL });
-await client.connect();
-
-const ddlExecutor: DdlExecutor = {
-  execute: (sql) => client.query(sql),
-};
-
-const NOTE = defineSchema({
-  name: 'NOTE',
-  scope: 'demo',                 // -> table DEMO_NOTE
-  fields: [{ name: 'text', type: 'string', required: true,
-             description: 'Body of the note.' }],
-});
-
-await migrateSql(ddlExecutor, [NOTE]);   // CREATE TABLE IF NOT EXISTS "DEMO_NOTE" ...
-console.log('created DEMO_NOTE');
-await client.end();`}
-        />
-        <p>
-          To run actual repository queries, wrap <C>pg</C> as a <C>SqlExecutor</C>{' '}
-          (rewriting <C>?</C> to <C>$n</C>) and use <C>SqlRepository</C> — see{' '}
-          <DocLink to="about/dal-sql">the SQL adapter</DocLink>.
-        </p>
       </Section>
 
       <Section title="Option B — Free hosted Postgres (no Docker)">
         <p>
           Create a free database on any of these and copy its connection string into{' '}
-          <C>env.local</C> as <C>DATABASE_URL</C>:
+          <C>env.local</C> as <C>POSTGRES_URL</C>:
         </p>
         <Table
           head={['Provider', 'Notes']}
@@ -134,50 +89,35 @@ await client.end();`}
         <CodeBlock
           lang="bash"
           title="env.local"
-          code={`DATABASE_URL=postgres://USER:PASSWORD@HOST/DBNAME?sslmode=require`}
+          code={`POSTGRES_URL=postgres://USER:PASSWORD@HOST/DBNAME?sslmode=require`}
         />
         <Callout kind="note">
           Most hosted Postgres requires SSL — keep <C>?sslmode=require</C>.
         </Callout>
       </Section>
 
-      <Section title="Option C — Just see the SQL (no database at all)">
+      <Section title="Run it">
+        <Sub title="As the service" />
         <p>
-          If you only want to verify the generated DDL is correct, you don't need a
-          database — print it:
+          Set <C>DB=postgres</C> so <C>make-repository</C> selects the Postgres adapter:
         </p>
         <CodeBlock
-          lang="ts"
-          code={`import { compileToSql, defineSchema } from '@hive/schema';
-
-const NOTE = defineSchema({
-  name: 'NOTE', scope: 'demo',
-  fields: [{ name: 'text', type: 'string', required: true }],
-});
-
-console.log(compileToSql(NOTE, { ifNotExists: true }));`}
+          lang="bash"
+          code={`DB=postgres node apps/catalog/src/main.ts
+curl -s -X POST http://localhost:4020/demo -H 'x-org-id: org-A'`}
         />
-        <p>This prints the <C>CREATE TABLE</C> + index statements you would run.</p>
-      </Section>
-
-      <Section title="What to hand me to test in Postgres">
-        <p>
-          To run the SQL path live (like we did for Mongo), provide <strong>one</strong> of:
-        </p>
-        <ol>
-          <li>
-            a <C>DATABASE_URL</C> from Option A or B (kept in <C>env.local</C>, never
-            committed; rotate it afterwards), <strong>or</strong>
-          </li>
-          <li>
-            confirmation to spin up the Docker container above and share the resulting{' '}
-            <C>DATABASE_URL</C>.
-          </li>
-        </ol>
-        <p>
-          With that, a SQL-backed integration test mirroring the TASKS Mongo test can
-          be added.
-        </p>
+        <Sub title="As a standalone MINT extract" />
+        <p>Extract a Postgres copy that vendors the postgres adapter + connection:</p>
+        <CodeBlock
+          lang="bash"
+          code={`MINT_REPO=$PWD node MINT/dist/cli/main.js extract \\
+  --microservice catalog --db postgres --mode silo \\
+  --name catalog-pg --token local-dev`}
+        />
+        <Callout kind="note">
+          Keep <C>POSTGRES_URL</C> in <C>env.local</C> only (never commit it), and rotate
+          shared credentials afterwards.
+        </Callout>
       </Section>
 
       <p className="contact">

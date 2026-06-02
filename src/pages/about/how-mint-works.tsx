@@ -19,7 +19,7 @@ export const meta = {
   group: 'about',
   file: 'how-mint-works',
   title: 'How MINT works (deep dive)',
-  order: 2,
+  order: 6,
 };
 
 export default function HowMintWorks() {
@@ -93,16 +93,17 @@ flowchart LR
           chart={`
 flowchart LR
     subgraph SRC["Your platform (READ-ONLY — untouched)"]
-      A["apps/tasks"]
-      B["dal-core / dal-mongoose / dal-sql"]
+      A["apps/catalog"]
+      B["@hive/dal / @hive/connection"]
       C0["middleware (corePipeline)"]
     end
     SRC ==>|MINT reads| M{{MINT}}
     M ==>|MINT writes| OUT
-    subgraph OUT["--out &lt;dir&gt; (the new copy)"]
-      D["copied services + business logic"]
-      E["standard allocator (swapped)"]
-      F["silo: corePipelineSilo + single-tenant DB"]
+    subgraph OUT["output/&lt;name&gt; (the new copy)"]
+      D["copied service + business logic"]
+      E["dal/index.ts: inline queries (one engine, no adapter)"]
+      F["db/: shipped schema (sql / mongo)"]
+      G["silo: tenancy stripped"]
     end
 `}
         />
@@ -117,10 +118,11 @@ flowchart LR
         <Table
           head={['Question', 'Answer']}
           rows={[
-            ['Does MINT change my original service?', <>No. The source is read-only. Only the copy in <C>--out</C> is written.</>],
-            ['Does the copy get its own middleware?', <>Yes — in silo mode the copy uses <C>corePipelineSilo</C> (no <C>tenantMiddleware</C>); in pooled mode it keeps your normal <C>corePipeline</C>.</>],
-            ['Does the copy get its own DB shape?', <>Yes — silo makes it single-tenant (drops <C>orgId</C>); pooled keeps the shared multi-tenant database. Either way, your original DB layer is untouched.</>],
-            ['Is my business logic rewritten?', 'No. Repositories, models, and routes are copied as-is; only the pluggable pieces (allocator, pipeline, tenancy) are swapped.'],
+            ['Does MINT change my original service?', <>No. The source is read-only. Only the copy in <C>output/&lt;name&gt;</C> is written.</>],
+            ['Does the copy carry its own data layer?', <>Yes — MINT <strong>replaces</strong> the generic <C>@hive/dal</C> with ONE concrete <C>src/lib/dal/index.ts</C> of inline driver queries for the chosen engine, so it runs with no workspace.</>],
+            ['Does the copy get its own database setup?', <>Yes — MINT ships <C>db/schema.sql</C> (Postgres) or <C>db/schema.mongo.json</C> (Mongo) for exactly the tables that service owns.</>],
+            ['Does the copy get its own tenancy shape?', <>Yes — silo builds <C>new Repository()</C> (runs unscoped for one tenant); pooled builds <C>new Repository(currentOrgId)</C>. Either way, your original is untouched.</>],
+            ['Is my business logic rewritten?', 'No. Routes stay identical; only the data layer (inline queries) and tenancy are fixed for the copy.'],
           ]}
         />
       </Section>
@@ -143,23 +145,28 @@ flowchart LR
         />
       </Section>
 
-      <Section title="The famous swap: secret sauce → shippable">
+      <Section title="What MINT swaps: inline data layer + shipped schema + tenancy">
         <p>
-          The clearest real example is <strong>id allocation</strong> (how new rows
-          get their numbers):
+          On extract, MINT replaces the generic workspace data layer with self-contained,
+          adapter-free code for the one chosen engine:
         </p>
         <Mermaid
-          caption="MINT swaps the fast internal allocator for the simple shippable one."
+          caption="MINT replaces the generic @hive/dal with one concrete file of inline queries, and ships the service's schema."
           chart={`
 flowchart LR
-    A["RangeReservationAllocator<br/><small>secret sauce: reserves blocks, fast</small>"] -->|MINT swap| B["CounterAllocator<br/><small>shippable: one increment, gap-free</small>"]
+    A["@hive/dal<br/><small>generic adapters + query AST</small>"] -->|MINT replace| B["src/lib/dal/index.ts<br/><small>inline mongo / sql queries, one engine</small>"]
+    S["schema/*.table.ts"] -->|MINT ship| D["db/schema.sql or db/schema.mongo.json"]
 `}
         />
         <p>
-          The customer gets working sequential ids; they just don't get our speed
-          trick. MINT performs this swap through the{' '}
-          <strong>secret-sauce registry</strong>. Adding more swaps later = adding
-          entries to that registry (no rewrites).
+          The copy gets ONE concrete <C>dal/index.ts</C> — for Mongo, direct{' '}
+          <C>db.collection(...)</C> driver calls; for Postgres, parameterised SQL (<C>$1</C>{' '}
+          placeholders, <C>ILIKE</C>, <C>RETURNING</C>). No adapter, no query AST, no engine
+          switch. The same <C>Repository</C> methods the routes already call (<C>fetch</C>,{' '}
+          <C>fetchOne</C>, <C>insert</C>, <C>update</C>, <C>remove</C>, <C>count</C>) are
+          implemented directly against the driver, so a junior dev can read it top to
+          bottom. MINT also ships the <DocLink to="docs/database">schema</DocLink> for the
+          tables that service owns.
         </p>
       </Section>
 
@@ -190,9 +197,9 @@ flowchart TD
             If the person isn't authorized, stop immediately — <em>before</em> anything
             is recorded or produced. (Unauthorized = hard error.)
           </Step>
-          <Step title="Pick the swaps">
-            Resolve which secret-sauce pieces to replace (e.g. range-allocator →
-            counter-allocator) from the registry.
+          <Step title="Resolve the engine + tenancy">
+            Resolve which engine the inline data layer targets (from <C>--db</C>) and
+            whether the copy is pooled or silo.
           </Step>
           <Step title="Open the security camera (audit: begin)">
             Now that we're authorized, record "an extraction started". From here on, if
@@ -237,16 +244,11 @@ flowchart TD
             [<strong>Silo</strong>, 'One customer, all to themselves. Only ever one tenant.', 'Records code-level transforms (see below).'],
           ]}
         />
-        <Sub title="In silo mode MINT records transforms like" />
+        <Sub title="In silo mode MINT" />
         <ul>
-          <li>set tenancy to <strong>single</strong>,</li>
-          <li>
-            <strong>strip the <C>orgId</C></strong> column and its index prefixes (not
-            needed with one tenant),
-          </li>
-          <li>swap <C>corePipeline</C> → a single-tenant <C>corePipelineSilo</C>,</li>
-          <li>make the base-repository tenant-scoping a <strong>no-op</strong>,</li>
-          <li>disable the <C>tenantGuard</C> plugin.</li>
+          <li>builds <C>new Repository()</C> with no tenant provider at <C>make-repository.ts</C>,</li>
+          <li>so the inline queries run <strong>unscoped</strong> for the single tenant,</li>
+          <li>drops the <C>orgId</C> column from the shipped <C>db/</C> schema.</li>
         </ul>
         <p>
           The result still works; it's just simplified because the "many families"
@@ -259,7 +261,7 @@ flowchart TD
           You may <strong>not</strong> run a real extraction without coordinating first.
           The commands below are shown so you understand exactly what MINT does. Today the
           binary <strong>validates your input and prints the resolved intent</strong> (the
-          risky adapters are wired only once there are services to extract).
+          risky plug-ins are wired only once there are services to extract).
         </Callout>
 
         <Sub title="The one command: extract" />
@@ -268,11 +270,10 @@ flowchart TD
           lang="bash"
           code={`mint extract \\
   --microservice <Name> \\
-  --db mongo|sql \\
-  --out <dir> \\
+  --db mongo|postgres \\
+  --name <output-name> \\
   --token <credential> \\
-  [--mode pooled|silo] \\
-  [--redis] [--queue] [--cache]`}
+  [--mode pooled|silo]`}
         />
 
         <Sub title="Every flag, explained" />
@@ -280,44 +281,42 @@ flowchart TD
           head={['Flag', 'Required?', 'What it means']}
           rows={[
             [<C>--microservice &lt;Name&gt;</C>, 'Yes', <>Which service to copy (alias: <C>--service</C>).</>],
-            [<C>--db mongo|sql</C>, 'Yes', 'Which database engine the copy targets. Must be exactly mongo or sql.'],
-            [<C>--out &lt;dir&gt;</C>, 'Yes', <>The output folder for the new copy (alias: <C>--output</C>). Your source is never written to — only this folder.</>],
+            [<C>--db mongo|postgres</C>, 'Yes', 'Which database engine the copy targets. Must be exactly mongo or postgres.'],
+            [<C>--name &lt;output-name&gt;</C>, 'Yes', <>Names the output folder under <C>output/</C>. Your source is never written to.</>],
             [<C>--token &lt;credential&gt;</C>, 'Yes', 'Proves you are an authorized operator. Never printed back in logs.'],
             [<C>--mode pooled|silo</C>, <>No (default <C>silo</C>)</>, <><strong>silo</strong> = single-tenant copy; <strong>pooled</strong> = keep the shared multi-tenant shape.</>],
-            [<><C>--redis</C> / <C>--queue</C> / <C>--cache</C></>, 'No', 'Optional capability add-ons to switch on in the copy. Unknown flags fail closed.'],
           ]}
         />
 
         <Sub title="Example 1 — a single-tenant (silo) Mongo copy" />
         <CodeBlock
           lang="bash"
-          code={`mint extract \\
-  --microservice tasks \\
+          code={`MINT_REPO=$PWD node MINT/dist/cli/main.js extract \\
+  --microservice catalog \\
   --db mongo \\
   --mode silo \\
-  --out ./out/tasks-acme \\
-  --token "$MINT_TOKEN"`}
+  --name catalog-mongo \\
+  --token local-dev`}
         />
         <p>
-          This reads the <C>tasks</C> service and writes a single-tenant copy into{' '}
-          <C>./out/tasks-acme</C> — with the standard allocator, <C>corePipelineSilo</C>,
-          and the <C>orgId</C> dropped. Your real <C>apps/tasks</C> is untouched.
+          This reads the <C>catalog</C> service and writes a single-tenant copy into{' '}
+          <C>output/catalog-mongo</C> — with inline Mongo queries and tenancy stripped. Your
+          real <C>apps/catalog</C> is untouched.
         </p>
 
-        <Sub title="Example 2 — a shared (pooled) SQL copy with caching" />
+        <Sub title="Example 2 — a shared (pooled) Postgres copy" />
         <CodeBlock
           lang="bash"
-          code={`mint extract \\
-  --microservice tasks \\
-  --db sql \\
+          code={`MINT_REPO=$PWD node MINT/dist/cli/main.js extract \\
+  --microservice catalog \\
+  --db postgres \\
   --mode pooled \\
-  --cache \\
-  --out ./out/tasks-shared \\
-  --token "$MINT_TOKEN"`}
+  --name catalog-pg \\
+  --token local-dev`}
         />
         <p>
-          This keeps the multi-tenant scaffolding (every row still has <C>orgId</C>, the
-          tenant guard stays on) and switches on the cache capability.
+          This keeps the multi-tenant scoping (the inline queries still scope by the current
+          tenant) and ships the Postgres <C>db/schema.sql</C>.
         </p>
 
         <Sub title="What you'll see today" />
@@ -329,19 +328,19 @@ flowchart TD
           lang="text"
           code={`Resolved extraction request:
 {
-  "serviceName": "tasks",
+  "serviceName": "catalog",
   "db": "mongo",
   "mode": "silo",
-  "outputDir": "./out/tasks-acme",
+  "outputName": "catalog-mongo",
   "capabilities": []
 }
 
 # bad input, e.g. a wrong engine:
-mint: --db must be 'mongo' or 'sql'.`}
+mint: --db must be 'mongo' or 'postgres'.`}
         />
 
         <Callout kind="note">
-          Because MINT is private and powerful, the real adapters for the riskiest steps
+          Because MINT is private and powerful, the real plug-ins for the riskiest steps
           are intentionally <strong>pluggable and, in this repo, stubbed/deferred</strong>:
           a real project-graph resolver (from the Nx graph), a template-based file-system
           writer, a signed-token operator authorizer, a persistent audit log, a post-gen
@@ -356,10 +355,10 @@ mint: --db must be 'mongo' or 'sql'.`}
       <Section title="The golden rule">
         <Callout kind="danger">
           <strong>Do not run, change, or ship MINT without coordinating first.</strong>{' '}
-          It checks IDs, swaps secret sauce, and audits everything for a reason. If you
-          need a new swap, a new capability, or a new mode, talk to the maintainer and
-          add a <strong>module/registry entry</strong> — never bend the frozen
-          pipeline.
+          It checks IDs, replaces the data layer with inline queries, and audits everything
+          for a reason. If you need a new engine, a new capability, or a new mode, talk to
+          the maintainer and add a <strong>module/registry entry</strong> — never bend the
+          frozen pipeline.
         </Callout>
       </Section>
 

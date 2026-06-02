@@ -102,11 +102,10 @@ flowchart LR
           lang="bash"
           code={`mint extract \\
   --microservice <Name> \\
-  --db mongo|sql \\
-  --out <dir> \\
+  --db mongo|postgres \\
+  --name <output-name> \\
   --token <credential> \\
-  [--mode pooled|silo] \\
-  [--redis] [--queue] [--cache]`}
+  [--mode pooled|silo]`}
         />
         <p>Example — a single-tenant Mongo copy of the tasks service:</p>
         <CodeBlock

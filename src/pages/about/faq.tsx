@@ -12,7 +12,7 @@ export const meta = {
   group: 'about',
   file: 'faq',
   title: 'FAQ',
-  order: 3,
+  order: 8,
 };
 
 export default function Faq() {
@@ -46,87 +46,72 @@ export default function Faq() {
       <Section title="How does MINT &quot;extract&quot;, in plain words?">
         <p>
           Think of a <strong>magic photocopier</strong>: it checks your ID, copies the
-          platform for a customer, <strong>swaps our secret-sauce pieces</strong> (e.g.
-          the fast range id-allocator) for shippable equivalents (the simple counter
-          allocator), shapes it for a shared ("pooled") or single-tenant ("silo")
-          install, and <strong>taste-tests</strong> the result before handing it over.
+          service for a customer, <strong>vendors the data layer</strong> (the{' '}
+          <C>@hive/dal</C> query core + the one chosen engine adapter, plus{' '}
+          <C>@hive/connection</C>) into the copy and rewrites the imports, shapes it for a
+          shared ("pooled") or single-tenant ("silo") install, and{' '}
+          <strong>taste-tests</strong> the result before handing it over.
           The order of those steps is <strong>frozen</strong> for safety. Full story:{' '}
           <DocLink to="about/how-mint-works">how MINT works</DocLink>.
         </p>
       </Section>
 
-      <Section title="Is the PostgreSQL flow actually tested, or only MongoDB?">
+      <Section title="Is the PostgreSQL flow actually supported, or only MongoDB?">
         <p>
-          <strong>Both are tested live.</strong>
+          <strong>Both are first-class.</strong> Each engine has its own adapter in{' '}
+          <DocLink to="about/dal">@hive/dal</DocLink> and its own client in{' '}
+          <DocLink to="about/connection">@hive/connection</DocLink>.
         </p>
         <ul>
           <li>
-            Mongo: the sample service{' '}
-            (<DocLink to="about/sample-tasks-service">@hive/tasks</DocLink>) runs 11
-            integration tests against a real MongoDB.
+            Mongo: the <DocLink to="about/catalog-service">catalog service</DocLink>{' '}
+            exercises insert / fetch (all filter ops) / fetchOne / count / update /
+            delete against a real MongoDB via <C>POST /demo</C>.
           </li>
           <li>
-            Postgres: <C>packages/dal-sql/scripts/verify-postgres.mjs</C> runs the full
-            SQL path against a <strong>real Postgres engine in-process</strong> (PGlite
-            — no Docker, no server):
+            Postgres: the <C>postgres-adapter</C> extends the portable SQL adapter with a
+            Postgres dialect (<C>$1</C> placeholders, <C>ILIKE</C>, <C>RETURNING</C>) over
+            <C>@hive/connection/postgres</C>.
           </li>
         </ul>
-        <CodeBlock
-          lang="bash"
-          code={`npx nx build @hive/dal-sql
-node packages/dal-sql/scripts/verify-postgres.mjs`}
-        />
         <Callout kind="note">
-          Running it for real caught a bug: the SQL adapter emitted{' '}
-          <strong>unquoted</strong> identifiers while the schema compiler emits{' '}
-          <strong>double-quoted</strong> ones. The adapter now quotes identifiers
-          consistently. See <DocLink to="docs/testing-postgres">testing with Postgres</DocLink>.
+          The portable <C>sql</C> adapter and the concrete <C>postgres</C> adapter are
+          kept separate — same query language, different dialect. See{' '}
+          <DocLink to="docs/testing-postgres">testing with Postgres</DocLink>.
         </Callout>
       </Section>
 
-      <Section title="&quot;Common&quot; vs &quot;service&quot; schema — what's the difference?">
-        <ul>
-          <li>
-            <strong>Common</strong> (<C>scope: 'common'</C>): a shared table, no name
-            prefix (e.g. <C>USER</C>). Put it in{' '}
-            <DocLink to="about/models-common">@hive/models-common</DocLink> so every
-            service reuses it.
-          </li>
-          <li>
-            <strong>Service</strong> (<C>scope: '&lt;service&gt;'</C>): owned by one
-            service; the physical name is prefixed (e.g. scope <C>tasks</C> +{' '}
-            <C>TASK</C> → <C>TASKS_TASK</C>).
-          </li>
-        </ul>
+      <Section title="Where does a service's schema live now?">
         <p>
-          Either way you write <strong>one</strong> <C>defineSchema(...)</C>; the system
-          injects <C>id</C>, <C>orgId</C>, and audit columns and makes every index{' '}
-          <C>orgId</C>-leading. Full details:{' '}
-          <DocLink to="about/schema">the schema layer</DocLink>.
+          A service owns its own entities. There is no shared schema package: the{' '}
+          <DocLink to="about/dal">@hive/dal</DocLink> query language is engine-neutral,
+          so a service just names its <C>entity</C> in each <C>QuerySpec</C> and lets the
+          chosen adapter map it to a Mongo collection or a Postgres table.
         </p>
       </Section>
 
       <Section title="How do I create a new microservice?">
         <p>
           Copy the shape of{' '}
-          <DocLink to="about/sample-tasks-service">apps/tasks</DocLink>: generate a
-          package under <C>apps/&lt;name&gt;</C>, add a <C>service.properties</C>,
-          wire <strong>schema → model → repository</strong>, a real <C>TokenVerifier</C>,
-          then <C>createApp</C> (<C>express.json()</C> → <C>corePipeline</C> → routes →{' '}
-          <C>errorHandler()</C>), and a <C>main.ts</C> that loads config, connects the
-          DB, and listens. Exact files and order:{' '}
+          <DocLink to="about/catalog-service">apps/catalog</DocLink>: an{' '}
+          <C>app.ts</C> pipeline (<C>express.json()</C> → core pipeline → routes →{' '}
+          <C>errorHandler()</C>), a <C>main.ts</C> that sets <C>HIVE_SERVICE_DIR</C> and
+          listens, and a single <C>make-repository.ts</C> that picks the db type and
+          tenancy. Everything else comes from <DocLink to="about/connection">@hive/connection</DocLink>{' '}
+          and <DocLink to="about/dal">@hive/dal</DocLink>. Exact files and order:{' '}
           <DocLink to="rules/how-to-add">how to add things</DocLink>.
         </p>
       </Section>
 
       <Section title="How is tenant isolation guaranteed?">
         <p>
-          Middleware resolves <C>orgId</C> from the verified token and stores it in
-          AsyncLocalStorage. The base repository reads it via <C>getOrgIdOrThrow()</C>{' '}
-          and injects it into <strong>every</strong> query; it fails closed (rejects) if
-          no tenant is in scope. Routes never read <C>orgId</C> from the body or headers.
-          See <DocLink to="about/tenant-context">tenant-context</DocLink> and{' '}
-          <DocLink to="about/dal-core">dal-core</DocLink>.
+          The request pipeline resolves <C>orgId</C> from the verified token and stores
+          it in <C>AsyncLocalStorage</C>. In the pooled build the repository's injected
+          tenant provider (<C>currentOrgId</C>) reads it and the adapter scopes{' '}
+          <strong>every</strong> query by it; it fails closed if no tenant is in scope.
+          Routes never read <C>orgId</C> from the body or headers. See{' '}
+          <DocLink to="about/catalog-service">the catalog service</DocLink> and{' '}
+          <DocLink to="about/dal">@hive/dal</DocLink>.
         </p>
       </Section>
 

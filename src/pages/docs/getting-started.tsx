@@ -160,14 +160,13 @@ flowchart LR
         <Table
           head={['Layer', 'Committed to Git?', 'Use it for']}
           rows={[
-            [<C>hive.properties</C>, 'Yes', 'Platform-wide defaults'],
-            [<C>service.properties</C>, 'Yes', 'Constants for one service'],
-            [<C>env.local</C>, 'No (git-ignored)', 'Your local secrets & overrides'],
-            [<C>process.env</C>, 'n/a', 'CI / production environment variables'],
+            [<><C>env.local</C> (global)</>, 'No (git-ignored)', 'Shared local secrets (e.g. MONGO_URL)'],
+            [<><C>env.local</C> (service)</>, 'No (git-ignored)', 'Per-service local overrides'],
+            [<C>process.env</C>, 'n/a', 'CI / production environment variables (highest priority)'],
           ]}
         />
         <p>
-          Full detail: <DocLink to="about/config">the config layer</DocLink>.
+          Full detail: <DocLink to="about/connection">the connection layer</DocLink>.
         </p>
       </Section>
 
@@ -189,7 +188,7 @@ flowchart LR
 
       <Section title="5. Run the sample service">
         <p>
-          The <strong>Tasks API</strong> shows every layer working together against a
+          The <strong>catalog API</strong> shows every layer working together against a
           real MongoDB. Here is the whole journey, then the commands:
         </p>
         <Mermaid
@@ -197,41 +196,38 @@ flowchart LR
           chart={`
 sequenceDiagram
     participant You
-    participant Nx as nx build
-    participant Node as node main.js
-    participant API as Tasks API
+    participant Node as node main.ts
+    participant API as catalog API
     participant DB as MongoDB
-    You->>Nx: npx nx build @hive/tasks
-    Nx-->>You: dist/main.js
-    You->>Node: node apps/tasks/dist/main.js
-    Node->>API: start, listen on :4010
-    You->>API: curl /tasks (Bearer token)
+    You->>Node: DB=mongo node apps/catalog/src/main.ts
+    Node->>API: start, listen on :4020
+    You->>API: curl POST /demo (x-org-id)
     API->>DB: scoped query (only your org)
     DB-->>API: rows
-    API-->>You: JSON tasks
+    API-->>You: JSON result
 `}
         />
         <Steps>
-          <Step title="Build it">
-            <CodeBlock lang="bash" code={`npx nx build @hive/tasks`} />
-          </Step>
           <Step title="Start it">
             <CodeBlock
               lang="bash"
-              code={`node apps/tasks/dist/main.js
-# → listening on http://localhost:4010`}
+              code={`DB=mongo node apps/catalog/src/main.ts
+# → listening on http://localhost:4020`}
             />
           </Step>
-          <Step title="Call it">
+          <Step title="Health check">
+            <CodeBlock lang="bash" code={`curl -s http://localhost:4020/health`} />
+          </Step>
+          <Step title="Call it (org-scoped)">
             <CodeBlock
               lang="bash"
-              code={`curl -s http://localhost:4010/tasks -H 'Authorization: Bearer <token>'`}
+              code={`curl -s -X POST http://localhost:4020/demo -H 'x-org-id: org-A'`}
             />
           </Step>
         </Steps>
         <p>
-          Full walkthrough and example calls:{' '}
-          <DocLink to="about/sample-tasks-service">the sample Tasks service</DocLink>.
+          Full walkthrough:{' '}
+          <DocLink to="about/catalog-service">the catalog service</DocLink>.
         </p>
       </Section>
 
@@ -242,7 +238,7 @@ sequenceDiagram
 npx nx run-many -t typecheck test --all
 
 # check just one project
-npx nx test @hive/dal-core`}
+npx nx test @hive/dal`}
         />
         <p>
           To run the live-database tests, provide the database URLs first — see{' '}

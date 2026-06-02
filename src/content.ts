@@ -52,10 +52,10 @@ const GROUP_FOR_FOLDER: Record<string, string> = {
 };
 
 const GROUP_TITLES: Record<string, string> = {
-  docs: 'Setup & Reference',
-  about: 'Concepts & Layers',
-  rules: 'Rules',
-  mint: 'MINT (read-only)',
+  docs: 'Start here',
+  about: 'The HIVE platform',
+  rules: 'Rules & conventions',
+  mint: 'MINT (internal tool)',
 };
 
 const GROUP_ORDER = ['docs', 'about', 'rules', 'mint'];
@@ -63,8 +63,8 @@ const GROUP_ORDER = ['docs', 'about', 'rules', 'mint'];
 // Pin a few important pages to the top of their group (only used for markdown
 // pages that don't declare their own `order`).
 const PINNED: Record<string, string[]> = {
-  docs: ['getting-started', 'commands', 'internals', 'testing-postgres'],
-  about: ['how-data-flows', 'how-mint-works', 'faq'],
+  docs: ['getting-started', 'commands', 'database', 'internals', 'testing-postgres'],
+  about: ['how-data-flows', 'create-a-service', 'how-mint-works', 'faq'],
   rules: ['coding-standards', 'how-to-add', 'mint'],
 };
 

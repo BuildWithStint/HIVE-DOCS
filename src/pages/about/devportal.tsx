@@ -15,7 +15,7 @@ export const meta = {
   group: 'about',
   file: 'devportal',
   title: 'The docs portal',
-  order: 12,
+  order: 9,
 };
 
 export default function Devportal() {

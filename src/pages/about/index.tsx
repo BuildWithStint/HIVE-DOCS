@@ -48,13 +48,13 @@ export default function AboutOverview() {
           accidentally skip the check.
         </p>
         <Mermaid
-          caption="Every request sets the current orgId, then the frozen core adds the tenant filter to every database call — automatically."
+          caption="Every request sets the current orgId, then the repository adds the tenant filter to every database call — automatically."
           chart={`
 flowchart TD
     REQ([HTTP request]) --> MW["middleware<br/><small>authenticate → set current orgId</small>"]
     MW --> ROUTES["your routes<br/><small>normal business code</small>"]
-    ROUTES --> CORE["dal-core frozen base<br/><small>adds orgId filter — always</small>"]
-    CORE --> ADP["dal-mongoose / dal-sql<br/><small>talks to Mongo / SQL</small>"]
+    ROUTES --> DAL["@hive/dal Repository<br/><small>adds orgId filter — always</small>"]
+    DAL --> ADP["mongo / postgres adapter<br/><small>talks to Mongo / Postgres</small>"]
     ADP --> DB[("one shared DB<br/>rows tagged by orgId")]
 `}
         />
@@ -93,17 +93,9 @@ flowchart TD
         <Table
           head={['Layer', 'Package', 'Guide']}
           rows={[
-            ['Tenant scope', <C>@hive/tenant-context</C>, <DocLink to="about/tenant-context">tenant-context</DocLink>],
-            ['Data contract + core', <C>@hive/dal-core</C>, <DocLink to="about/dal-core">dal-core</DocLink>],
-            ['MongoDB adapter', <C>@hive/dal-mongoose</C>, <DocLink to="about/dal-mongoose">dal-mongoose</DocLink>],
-            ['SQL adapter', <C>@hive/dal-sql</C>, <DocLink to="about/dal-sql">dal-sql</DocLink>],
-            ['Shared models', <C>@hive/models-common</C>, <DocLink to="about/models-common">models-common</DocLink>],
-            ['Schema layer', <C>@hive/schema</C>, <DocLink to="about/schema">schema</DocLink>],
-            ['Config', <C>@hive/config</C>, <DocLink to="about/config">config</DocLink>],
-            ['Auth', <C>@hive/security</C>, <DocLink to="about/security">security</DocLink>],
-            ['HTTP pipeline', <C>@hive/middleware</C>, <DocLink to="about/middleware">middleware</DocLink>],
-            ['Logging/metrics', <C>@hive/observability</C>, <DocLink to="about/observability">observability</DocLink>],
-            ['Sample app', <C>apps/tasks</C>, <DocLink to="about/sample-tasks-service">sample-tasks-service</DocLink>],
+            ['Env + DB clients', <C>@hive/connection</C>, <DocLink to="about/connection">connection</DocLink>],
+            ['Query + adapters', <C>@hive/dal</C>, <DocLink to="about/dal">dal</DocLink>],
+            ['Sample service', <C>apps/catalog</C>, <DocLink to="about/catalog-service">catalog service</DocLink>],
             ['Docs portal', <C>@hive/portal</C>, <DocLink to="about/devportal">devportal</DocLink>],
             ['Extraction tool', <C>MINT</C>, <DocLink to="about/mint">mint</DocLink>],
           ]}

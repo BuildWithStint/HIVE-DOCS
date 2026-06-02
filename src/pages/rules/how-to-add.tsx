@@ -63,25 +63,20 @@ export default function HowToAdd() {
         </Steps>
       </Section>
 
-      <Section title="Add a new entity/table">
+      <Section title="Add a new entity">
         <ol>
           <li>
-            <strong>Describe it once</strong> with the{' '}
-            <DocLink to="about/schema">schema layer</DocLink>: common table →{' '}
-            <C>scope: 'common'</C> (no prefix); service table → <C>scope: '&lt;service&gt;'</C>{' '}
-            (gets the <C>&lt;SERVICE&gt;_</C> prefix). Give each field a <C>type</C> and an
-            optional <C>description</C>. Don't declare <C>id</C>, <C>orgId</C>, or audit
-            fields — they're injected.
+            Pick a stable <C>entity</C> name (the Mongo collection or Postgres table),
+            e.g. <C>products</C>. The engine-neutral{' '}
+            <DocLink to="about/dal">@hive/dal</DocLink> query references it by that name.
           </li>
           <li>
-            <strong>Generate what you need</strong>: TS type via <C>compileToTypes(schema)</C>;
-            SQL tables via <C>migrateSql(executor, [schema])</C>; Mongo indexes via{' '}
-            <C>mongoIndexCommands([schema])</C>.
+            Don't model <C>id</C> or <C>orgId</C> by hand — the adapter generates the id
+            and (in the pooled build) the tenant provider stamps <C>orgId</C>.
           </li>
           <li>
-            If it's shared by many services, put it in{' '}
-            <DocLink to="about/models-common">@hive/models-common</DocLink>; otherwise keep it
-            inside the service.
+            Build queries with the <C>where(field, op, value)</C> helper and the
+            friendly <C>FetchQuery</C> / <C>WriteQuery</C> shapes from <C>@hive/dal</C>.
           </li>
         </ol>
       </Section>
@@ -102,26 +97,24 @@ export default function HowToAdd() {
 
       <Section title="Add a new service (app)">
         <Mermaid
-          caption="Wire a new service exactly like apps/tasks."
+          caption="Wire a new service exactly like apps/catalog."
           chart={`
 flowchart LR
-    SCH["schema"] --> MOD["model"] --> REPO["repository"]
-    TV["TokenVerifier"] --> APP["createApp:<br/>json → corePipeline → routes → errorHandler"]
-    REPO --> APP
-    APP --> MAIN["main.ts: loadConfig → connect DB → listen"]
+    DAL["@hive/dal"] --> MR["make-repository"]
+    MR --> APP["app.ts:<br/>json → corePipeline → routes → errorHandler"]
+    APP --> MAIN["main.ts: set HIVE_SERVICE_DIR → listen"]
 `}
         />
         <ol>
-          <li>Generate a package under <C>apps/&lt;name&gt;</C> (same generator as above).</li>
-          <li>Add a <C>service.properties</C> (port, <C>service.dal.engine</C>, etc.).</li>
+          <li>Create a package under <C>apps/&lt;name&gt;</C>.</li>
+          <li>Add <C>@hive/connection</C> + <C>@hive/dal</C> as <C>workspace:*</C> deps.</li>
           <li>
-            Wire it up like <DocLink to="about/sample-tasks-service">apps/tasks</DocLink>:
-            schema → model → repository; a real <C>TokenVerifier</C> (the sample one is
-            demo-only); <C>createApp</C> (<C>express.json()</C> → <C>corePipeline(&#123; verifier &#125;)</C>{' '}
-            → routes → <C>errorHandler()</C>); and a <C>main.ts</C> that loads config, connects
-            the DB, and listens.
+            Wire it up like <DocLink to="about/catalog-service">apps/catalog</DocLink>: a
+            single <C>make-repository.ts</C> (db type + tenancy), an <C>app.ts</C>{' '}
+            (<C>express.json()</C> → <C>corePipeline</C> → routes → <C>errorHandler()</C>),
+            and a <C>main.ts</C> that sets <C>HIVE_SERVICE_DIR</C> and listens.
           </li>
-          <li>Add an integration test (skip if its DB URL env var is absent).</li>
+          <li>Tenancy lives in <C>src/lib/tenancy</C> (AsyncLocalStorage).</li>
         </ol>
         <Callout kind="note">
           Docs are <strong>not</strong> served from inside services. Read them with the
@@ -132,29 +125,28 @@ flowchart LR
       <Section title="Add support for a new database engine">
         <ol>
           <li>
-            Create an adapter package that <strong>extends <C>AbstractBaseRepository</C></strong>{' '}
-            and implements the five <C>execute*</C> methods. Put <strong>no tenant logic</strong>{' '}
-            there.
+            Add an adapter in <C>packages/dal/src/adapters</C> that implements{' '}
+            <C>DatabaseAdapter</C> (one method: <C>execute(spec)</C>). Put{' '}
+            <strong>no tenant logic</strong> there — the Repository injects it.
           </li>
           <li>
-            Add a query translator (neutral <C>QuerySpec</C> → engine syntax) with the same
-            safety rules (parameterize values / escape inputs).
+            Translate the neutral <C>QuerySpec</C> to engine syntax with the same safety
+            rules (parameterize values / escape inputs).
           </li>
-          <li>Provide an <C>IdAllocator</C> for sequential ids.</li>
-          <li>Register it with the <C>RepositoryFactory</C> registry.</li>
+          <li>
+            Add a connection file + env var in <C>@hive/connection</C> (keep it separate
+            from other engines).
+          </li>
+          <li>Register it in <C>createAdapter(dbType)</C> in <C>packages/dal/src/factory.ts</C>.</li>
           <li>Only add a <C>QuerySpec</C> operator if <strong>every</strong> engine can support it.</li>
         </ol>
       </Section>
 
       <Section title="Add a new config value">
         <ul>
-          <li>Platform-wide default → <C>hive.properties</C>.</li>
-          <li>Per-service constant → that service's <C>service.properties</C>.</li>
-          <li>
-            Secret / local override → <C>env.local</C> (and document it in{' '}
-            <C>env.local.example</C>). Never commit secrets.
-          </li>
-          <li>Read it with <C>config.getRequired(...)</C> / <C>getNumber(...)</C> / <C>getBoolean(...)</C>.</li>
+          <li>Secret / connection string → <C>env.local</C> (service-local or global). Never commit secrets.</li>
+          <li>Read a required value with <C>requireEnv('KEY')</C> from <C>@hive/connection/env</C> (throws if missing).</li>
+          <li>Read an optional value with <C>optionalEnv('KEY', fallback)</C>.</li>
         </ul>
       </Section>
 
@@ -213,9 +205,9 @@ flowchart LR
           <li><strong>Write it simply.</strong> Assume the reader is brand new.</li>
           <li>
             <strong>Cross-module ripple check</strong> — a new <C>QuerySpec</C> operator
-            touches <C>dal-core</C> + every adapter + how-data-flows; a new secret-sauce swap
-            touches <C>dal-mongoose</C> + mint + how-mint-works; a new MINT mode/capability
-            touches how-mint-works + the MINT rules.
+            touches <C>@hive/dal</C> + every adapter + how-data-flows; a new engine
+            touches <C>@hive/dal</C> + <C>@hive/connection</C> + mint; a new MINT
+            mode/capability touches how-mint-works + the MINT rules.
           </li>
         </ol>
       </Section>
@@ -224,7 +216,7 @@ flowchart LR
         <Card icon="✍️" title="Coding standards" to="rules/coding-standards">
           The rules for the code itself.
         </Card>
-        <Card icon="🧩" title="Sample service" to="about/sample-tasks-service">
+        <Card icon="🧩" title="Sample service" to="about/catalog-service">
           A working reference to copy.
         </Card>
       </NextSteps>

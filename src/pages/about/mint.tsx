@@ -15,7 +15,7 @@ export const meta = {
   group: 'about',
   file: 'mint',
   title: 'MINT — the extraction tool',
-  order: 4,
+  order: 7,
 };
 
 export default function Mint() {
@@ -44,10 +44,12 @@ export default function Mint() {
 
       <Section title="Why it exists">
         <p>
-          HIVE keeps some "secret sauce" internal (for example, a faster id-allocation
-          strategy). When generating a client-facing copy, MINT swaps internal-only
-          pieces for the shippable equivalents and can change how a service is structured
-          (for example, isolating a single tenant).
+          When generating a client-facing copy of a service, MINT <strong>replaces</strong>{' '}
+          the shared, generic data layer (<C>@hive/dal</C>) with ONE concrete file of inline
+          queries for the chosen engine, ships that service's database schema (
+          <C>db/schema.sql</C> or <C>db/schema.mongo.json</C>), and can change how a service is
+          structured (for example, isolating a single tenant in silo mode) — so the copy runs
+          standalone with no adapters and no workspace.
         </p>
       </Section>
 
@@ -57,7 +59,7 @@ export default function Mint() {
           chart={`
 flowchart TD
     PLAN["ProjectPlan<br/><small>in-memory, immutable</small>"] --> EX["Extractor (frozen pipeline)"]
-    EX --> SWAP["Swaps<br/><small>range → counter allocator</small>"]
+    EX --> SWAP["Replace data layer<br/><small>inline queries, one engine + db/ schema</small>"]
     EX --> MODE["Mode<br/><small>pooled / silo</small>"]
     EX --> GATE["Verify gate<br/><small>install / typecheck / boot</small>"]
     GATE --> OUT["Shippable files"]
@@ -94,7 +96,7 @@ flowchart TD
       <Section title="It copies — it never changes your services">
         <Callout kind="key">
           MINT <strong>reads</strong> your platform and <strong>writes a new copy</strong>{' '}
-          into the <C>--out</C> folder. Your original microservices are{' '}
+          into the <C>--name</C> folder under <C>output/</C>. Your original microservices are{' '}
           <strong>never edited or removed</strong> — they stay exactly as they are. The
           copy is what gets the swapped allocator, the silo middleware, and the
           single-tenant DB shape. See{' '}
@@ -113,17 +115,16 @@ flowchart TD
           lang="bash"
           code={`mint extract \\
   --microservice <Name> \\
-  --db mongo|sql \\
-  --out <dir> \\
+  --db mongo|postgres \\
+  --name <output-name> \\
   --token <credential> \\
-  [--mode pooled|silo] \\
-  [--redis] [--queue] [--cache]`}
+  [--mode pooled|silo]`}
         />
         <p>For example, a single-tenant Mongo copy of the tasks service:</p>
         <CodeBlock
           lang="bash"
           code={`mint extract --microservice tasks --db mongo --mode silo \\
-  --out ./out/tasks-acme --token "$MINT_TOKEN"`}
+  --name tasks-acme --token "$MINT_TOKEN"`}
         />
         <p>
           The full flag table, more examples, and the exact output live in{' '}
@@ -134,7 +135,7 @@ flowchart TD
       <Section title="How to extend it">
         <p>
           If you need to add a new capability module or extend the silo transforms,{' '}
-          <strong>contact the maintainer first</strong> — there are real adapters (graph
+          <strong>contact the maintainer first</strong> — there are real plug-ins (graph
           resolver, file writer, signed-token auth, persistent audit, the
           install/typecheck/boot gate) that are intentionally wired only when services
           exist.

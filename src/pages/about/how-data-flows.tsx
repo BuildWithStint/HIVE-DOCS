@@ -62,9 +62,9 @@ export default function HowDataFlows() {
           head={['Name', 'Real thing', 'Job in one line']}
           rows={[
             ['The doorman', <C>middleware</C>, 'Checks your ID badge and remembers who you are'],
-            ['The notepad', <C>tenant-context</C>, 'Holds "the current family name" for this request'],
-            ['The security guard', <C>dal-core</C> + ' base repository', 'Adds the family-name filter to every query'],
-            ['The translator', <>{' '}<C>dal-mongoose</C> / <C>dal-sql</C></>, 'Turns a neutral request into Mongo/SQL words'],
+            ['The notepad', <C>AsyncLocalStorage</C>, 'Holds "the current family name" for this request'],
+            ['The security guard', <><C>@hive/dal</C> Repository</>, 'Adds the family-name filter to every query (via the injected tenant provider)'],
+            ['The translator', <>{' '}<C>mongo-adapter</C> / <C>postgres-adapter</C></>, 'Turns a neutral request into Mongo/SQL words'],
             ['The mailroom', 'MongoDB / PostgreSQL', 'Actually stores and returns the letters'],
           ]}
         />
@@ -82,9 +82,9 @@ export default function HowDataFlows() {
 sequenceDiagram
     participant U as User (org-A)
     participant MW as middleware + security
-    participant TC as tenant-context (notepad)
+    participant TC as AsyncLocalStorage (notepad)
     participant R as your route
-    participant Core as dal-core (guard)
+    participant Core as @hive/dal Repository (guard)
     participant Adp as adapter (translator)
     participant DB as database
     U->>MW: POST /tasks (Bearer token)
@@ -116,7 +116,7 @@ sequenceDiagram
               peek at another tenant.
             </Callout>
           </Step>
-          <Step title="The notepad remembers who you are (tenant-context)">
+          <Step title="The notepad remembers who you are (AsyncLocalStorage)">
             <p>
               The <C>tenant</C> middleware writes{' '}
               <C>&#123; orgId: 'org-A', userId, requestId &#125;</C> onto a per-request
@@ -134,28 +134,28 @@ sequenceDiagram
               platform stamps it for you.
             </p>
           </Step>
-          <Step title="The security guard adds the family name (dal-core)">
-            <p>This is the frozen core. For a create it does three things:</p>
+          <Step title="The security guard adds the family name (@hive/dal)">
+            <p>The Repository + adapter. For a create it does three things:</p>
             <Table
               head={['Step', 'What happens']}
               rows={[
-                ['Sanitize input', <>Throws away any <C>id</C>, <C>_id</C>, or <C>orgId</C> a caller tried to sneak in.</>],
-                ['Get a fresh id', <>Asks the injected <C>IdAllocator</C> for the next sequential number (e.g. <C>1</C>).</>],
-                ['Stamp the tenant', <>Reads <C>org-A</C> from the notepad and attaches it; sets <C>createdAt</C>/<C>updatedAt</C>.</>],
+                ['Sanitize input', <>Throws away any <C>id</C> or <C>orgId</C> a caller tried to sneak in.</>],
+                ['Stamp the tenant', <>Reads <C>org-A</C> from the notepad (the injected tenant provider) and attaches it.</>],
+                ['Generate the id', <>The adapter creates the stored id and returns it as a string <C>id</C>.</>],
               ]}
             />
             <p>
               So <C>&#123; title: 'Buy milk' &#125;</C> becomes{' '}
-              <C>&#123; id: 1, orgId: 'org-A', title: 'Buy milk', createdAt, updatedAt &#125;</C>.
-              Then it calls <C>executeInsert(...)</C> — which the translator fills in.
+              <C>&#123; id, orgId: 'org-A', title: 'Buy milk' &#125;</C>.
+              Then it calls the adapter's <C>execute(spec)</C> for the INSERT.
             </p>
           </Step>
           <Step title="The translator speaks the database's language (adapter)">
             <Table
               head={['Engine', 'What it becomes']}
               rows={[
-                [<C>dal-mongoose</C>, <>A Mongoose <C>insertOne</C>/<C>save</C>. The sequential id is stored as Mongo's <C>_id</C>.</>],
-                [<C>dal-sql</C>, <><C>INSERT INTO "TASKS_TASK" (...) VALUES (?, ?, …)</C> with values <strong>bound as parameters</strong> — never glued into the text (stops SQL injection).</>],
+                [<C>mongo-adapter</C>, <>An <C>insertOne</C>. The id maps to Mongo's <C>_id</C> and back to a string <C>id</C>.</>],
+                [<C>postgres-adapter</C>, <><C>INSERT INTO products (...) VALUES ($1, $2, …) RETURNING *</C> with values <strong>bound as parameters</strong> — never glued into the text (stops SQL injection).</>],
               ]}
             />
           </Step>
@@ -185,7 +185,7 @@ sequenceDiagram
           </li>
           <li>
             The translator turns that into <C>find(&#123; orgId: 'org-A' &#125;)</C>{' '}
-            (Mongo) or <C>SELECT * FROM "TASKS_TASK" WHERE "orgId" = ?</C> (SQL).
+            (Mongo) or <C>SELECT * FROM products WHERE "orgId" = $1</C> (SQL).
           </li>
         </ul>
         <Mermaid
@@ -201,9 +201,9 @@ flowchart TD
 `}
         />
         <Callout kind="note" title="Proven by real tests">
-          The sample service has an "org-B cannot see org-A" test against live
-          MongoDB, and the SQL path is proven the same way against a real Postgres
-          engine. See <DocLink to="about/dal-sql">the SQL adapter</DocLink>.
+          The catalog service has an "org-B cannot see org-A" behaviour against live
+          MongoDB, and the Postgres path uses the same neutral query through its own
+          adapter. See <DocLink to="about/dal">@hive/dal</DocLink>.
         </Callout>
       </Section>
 
@@ -233,20 +233,13 @@ flowchart TD
         </p>
       </Section>
 
-      <Section title="Where the ids come from (and why they're boring numbers)">
+      <Section title="Where the ids come from">
         <p>
-          Most databases like random ids. HIVE deliberately uses{' '}
-          <strong>simple sequential numbers</strong> (1, 2, 3 …) via an{' '}
-          <C>IdAllocator</C>, so ids look identical on Mongo or SQL and a future Mongo →
-          SQL migration keeps the same ids.
+          Each adapter generates the stored id for an insert and exposes it as a string{' '}
+          <C>id</C> on the way out (Mongo's <C>_id</C> becomes <C>id</C>). Business code
+          never sets an id — the input type forbids it — so you can't forge one or
+          collide with another tenant.
         </p>
-        <Table
-          head={['Strategy', 'How', 'Where used']}
-          rows={[
-            [<C>CounterAllocator</C>, 'One increment per insert, gap-free.', 'The version shipped to clients.'],
-            [<C>RangeReservationAllocator</C>, 'Grabs a block of ids at once for speed.', <>HIVE-internal "secret sauce" — MINT swaps it out (see <DocLink to="about/how-mint-works">how MINT works</DocLink>).</>],
-          ]}
-        />
       </Section>
 
       <Section title="What can go wrong (and how the design protects you)">
@@ -278,8 +271,8 @@ flowchart TD
         <Card icon="🧠" title="The engine room" to="docs/internals">
           The same layers, opened up from the inside.
         </Card>
-        <Card icon="🔒" title="tenant-context" to="about/tenant-context">
-          The notepad, in detail.
+        <Card icon="�️" title="dal" to="about/dal">
+          The query language + adapters, in detail.
         </Card>
       </NextSteps>
 
