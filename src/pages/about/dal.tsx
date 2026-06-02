@@ -101,8 +101,11 @@ export function makeRepository(): Repository {
         />
         <Callout kind="note" title="After MINT">
           That's the <strong>monorepo</strong> shape (generic adapter + factory). A minted
-          standalone copy has no adapter at all — MINT replaces this layer with one concrete{' '}
-          <C>src/lib/dal/index.ts</C> of inline queries for the chosen engine. See{' '}
+          standalone copy has no adapter at all — MINT replaces this layer with two
+          concrete files in <C>src/lib/dal/</C>: <C>util.ts</C> (types + engine-specific
+          filter/row helpers) and <C>index.ts</C> (the inline-query <C>Repository</C>,
+          re-exporting <C>util.ts</C> so any sibling dal file can still{' '}
+          <C>import {'{ where, Filter }'} from './index.ts'</C>). See{' '}
           <DocLink to="about/how-mint-works">how MINT works</DocLink>.
         </Callout>
       </Section>

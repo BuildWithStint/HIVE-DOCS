@@ -101,7 +101,7 @@ flowchart LR
     M ==>|MINT writes| OUT
     subgraph OUT["output/&lt;name&gt; (the new copy)"]
       D["copied service + business logic"]
-      E["dal/index.ts: inline queries (one engine, no adapter)"]
+      E["dal/util.ts + dal/index.ts: inline queries, one engine, no adapter"]
       F["db/: shipped schema (sql / mongo)"]
       G["silo: tenancy stripped"]
     end
@@ -119,7 +119,7 @@ flowchart LR
           head={['Question', 'Answer']}
           rows={[
             ['Does MINT change my original service?', <>No. The source is read-only. Only the copy in <C>output/&lt;name&gt;</C> is written.</>],
-            ['Does the copy carry its own data layer?', <>Yes — MINT <strong>replaces</strong> the generic <C>@hive/dal</C> with ONE concrete <C>src/lib/dal/index.ts</C> of inline driver queries for the chosen engine, so it runs with no workspace.</>],
+            ['Does the copy carry its own data layer?', <>Yes — MINT <strong>replaces</strong> the generic <C>@hive/dal</C> with two concrete files in <C>src/lib/dal/</C>: <C>util.ts</C> (shared types + filter/row helpers) and <C>index.ts</C> (the inline-query <C>Repository</C> for the chosen engine). Any other dal file you add is copied too and can reuse the helpers via <C>./util.ts</C>.</>],
             ['Does the copy get its own database setup?', <>Yes — MINT ships <C>db/schema.sql</C> (Postgres) or <C>db/schema.mongo.json</C> (Mongo) for exactly the tables that service owns.</>],
             ['Does the copy get its own tenancy shape?', <>Yes — silo builds <C>new Repository()</C> (runs unscoped for one tenant); pooled builds <C>new Repository(currentOrgId)</C>. Either way, your original is untouched.</>],
             ['Is my business logic rewritten?', 'No. Routes stay identical; only the data layer (inline queries) and tenancy are fixed for the copy.'],
@@ -154,15 +154,21 @@ flowchart LR
           caption="MINT replaces the generic @hive/dal with one concrete file of inline queries, and ships the service's schema."
           chart={`
 flowchart LR
-    A["@hive/dal<br/><small>generic adapters + query AST</small>"] -->|MINT replace| B["src/lib/dal/index.ts<br/><small>inline mongo / sql queries, one engine</small>"]
+    A["@hive/dal<br/><small>generic adapters + query AST</small>"] -->|MINT replace| B["src/lib/dal/util.ts + index.ts<br/><small>helpers + inline mongo / sql queries, one engine</small>"]
     S["schema/*.table.ts"] -->|MINT ship| D["db/schema.sql or db/schema.mongo.json"]
 `}
         />
         <p>
-          The copy gets ONE concrete <C>dal/index.ts</C> — for Mongo, direct{' '}
-          <C>db.collection(...)</C> driver calls; for Postgres, parameterised SQL (<C>$1</C>{' '}
-          placeholders, <C>ILIKE</C>, <C>RETURNING</C>). No adapter, no query AST, no engine
-          switch. The same <C>Repository</C> methods the routes already call (<C>fetch</C>,{' '}
+          The copy gets two concrete files in <C>src/lib/dal/</C>: <C>util.ts</C> holds the
+          shared types (<C>Filter</C>, <C>Sort</C>, <C>Row</C>, <C>where(...)</C>) and the
+          engine-specific helpers (Mongo: <C>buildMongoFilter</C>, <C>toRow</C>; Postgres:{' '}
+          <C>buildWhere</C>, <C>clause</C>, <C>toRow</C>), and <C>index.ts</C> holds the{' '}
+          <C>Repository</C> — for Mongo, direct <C>db.collection(...)</C> calls; for
+          Postgres, parameterised SQL (<C>$1</C> placeholders, <C>ILIKE</C>,{' '}
+          <C>RETURNING</C>). No adapter, no query AST, no engine switch. <C>index.ts</C>{' '}
+          re-exports everything from <C>util.ts</C>, so any hand-written dal file the
+          service ships (e.g. <C>queries.ts</C>) is copied across and keeps working with a
+          single import path. The same <C>Repository</C> methods the routes call (<C>fetch</C>,{' '}
           <C>fetchOne</C>, <C>insert</C>, <C>update</C>, <C>remove</C>, <C>count</C>) are
           implemented directly against the driver, so a junior dev can read it top to
           bottom. MINT also ships the <DocLink to="docs/database">schema</DocLink> for the
